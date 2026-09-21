@@ -88,6 +88,7 @@
 <section id="wallet" class="section panel reveal">
   <div class="section-head"><div><span class="eyebrow">UNIFIED ECONOMY · V11.7</span><h2>NEON <em>WALLET</em></h2><p class="section-note">Identidad pública, balances computables y activos externos observados desde el bridge local.</p></div><span class="pill"><i></i> REAL / COMPUTABLE</span></div>
   <div id="walletDashboard"></div>
+  <div id="realWorkDashboard"></div>
 </section>
 <section id="control" class="section panel reveal">
   <div class="section-head"><div><span class="eyebrow">CONTROL CENTER · V5.6 → V8.8</span><h2>NEON <em>CONTROL</em></h2></div><span class="pill"><i></i> CUMULATIVE</span></div>
@@ -121,5 +122,5 @@
 <script src="neon-ai.config.js"></script>
 <script src="creator-gift.bridge.js"></script>
 <script src="script.js"></script>
-<script type="module">import { mountWalletDashboard } from './UI/wallet-dashboard.js'; mountWalletDashboard(document.querySelector('#walletDashboard')); </script>
+<script type="module">import { mountWalletDashboard } from './UI/wallet-dashboard.js'; import { mountRealWorkDashboard } from './UI/real-work-dashboard.js'; mountWalletDashboard(document.querySelector('#walletDashboard')); mountRealWorkDashboard(document.querySelector('#realWorkDashboard')); </script>
 </body></html>

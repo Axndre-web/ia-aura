@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""NEON LIM Bridge — V11.7 Unified
+"""NEON LIM Bridge — V11.7.1 Real Work Unified
 Local-only control/observation bridge for the public NEON PLAYER X frontend.
 
 Design goals:
@@ -27,7 +27,7 @@ NETWORK_TIMEOUT = float(os.getenv('NEON_NETWORK_TIMEOUT', '8'))
 
 lock = threading.RLock()
 state = {
-    'version': '11.7.0',
+    'version': '11.7.1',
     'startedAt': time.time(),
     'cycles': 0,
     'decision': 'OBSERVE',
@@ -39,6 +39,8 @@ state = {
     'resources': {'NXC': 0, 'CREDITS': 0, 'BITS': 0},
     'lastTick': None,
     'network': {'solana': {'status': 'unknown'}, 'bitcoin': {'status': 'unknown'}},
+    'work': {'jobs': [], 'settlements': [], 'source': 'local-bridge'},
+    'receipts': [],
 }
 
 
@@ -65,7 +67,7 @@ def save_state():
 
 def http_json(url, payload=None):
     data = None if payload is None else json.dumps(payload).encode('utf-8')
-    req = Request(url, data=data, headers={'Content-Type': 'application/json', 'User-Agent': 'NEON-LIM/11.7'})
+    req = Request(url, data=data, headers={'Content-Type': 'application/json', 'User-Agent': 'NEON-LIM/11.7.1'})
     with urlopen(req, timeout=NETWORK_TIMEOUT) as response:
         return json.loads(response.read().decode('utf-8'))
 
@@ -108,7 +110,7 @@ def autonomous_loop():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = 'NEON-LIM/11.7'
+    server_version = 'NEON-LIM/11.7.1'
 
     def log_message(self, fmt, *args):
         print('[NEON-LIM]', fmt % args)
@@ -135,7 +137,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split('?', 1)[0]
-        if path in ('/health', '/telemetry', '/wallet', '/api/health', '/api/telemetry', '/api/wallet'):
+        if path in ('/health', '/telemetry', '/wallet', '/work', '/receipts', '/api/health', '/api/telemetry', '/api/wallet', '/api/work', '/api/receipts'):
             if not self.authorized():
                 self.send_json(401, {'ok': False, 'error': 'UNAUTHORIZED'})
                 return
@@ -151,6 +153,18 @@ class Handler(BaseHTTPRequestHandler):
                 })
             elif path.endswith('/telemetry') or path == '/telemetry':
                 self.send_json(200, {'ok': True, 'source': 'local-autonomous-loop', 'telemetry': snapshot})
+            elif path.endswith('/work') or path == '/work':
+                self.send_json(200, {
+                    'ok': True, 'source': 'local-bridge',
+                    'mode': 'READ_ONLY_OBSERVABLE',
+                    'work': snapshot.get('work', {'jobs': [], 'settlements': []}),
+                })
+            elif path.endswith('/receipts') or path == '/receipts':
+                self.send_json(200, {
+                    'ok': True, 'source': 'local-bridge',
+                    'mode': 'READ_ONLY_OBSERVABLE',
+                    'receipts': snapshot.get('receipts', []),
+                })
             else:
                 self.send_json(200, {
                     'ok': True, 'identity': {'username': '@neonorb'},
@@ -169,7 +183,7 @@ def main():
     thread.start()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f'NEON LIM bridge: http://{HOST}:{PORT}', flush=True)
-    print('Endpoints: /health /telemetry /wallet', flush=True)
+    print('Endpoints: /health /telemetry /wallet /work /receipts', flush=True)
     server.serve_forever()
 
 if __name__ == '__main__':

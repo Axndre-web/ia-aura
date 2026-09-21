@@ -30,8 +30,7 @@
   <a href="#radio" class="nav-link">◉ <span>Radio</span></a>
   <a href="#player" class="nav-link">♫ <span>Player</span></a>
   <a href="#tienda" class="nav-link">▣ <span>Tienda</span></a>
-  <a href="#economy" class="nav-link">◉ <span>Billetera</span></a>
-  <a href="#control" class="nav-link">◈ <span>Control</span></a><a href="#temas" class="nav-link">✦ <span>Temas</span></a>
+  <a href="#control" class="nav-link">◈ <span>Control</span></a><a href="#wallet" class="nav-link">▣ <span>Wallet</span></a><a href="#temas" class="nav-link">✦ <span>Temas</span></a>
 </nav>
 <main>
 <section id="inicio" class="hero section">
@@ -52,10 +51,6 @@
     <div class="dock-now"><div class="dock-cover" id="dockCover"><img src="icon-96.png" alt=""></div><div><span>LISTA LOCAL</span><b id="dockNow">Sin archivo seleccionado</b><small id="dockMeta">Arrastra archivos para reproducirlos aquí.</small></div></div>
     <div class="file-queue" id="fileQueue"></div>
   </aside>
-</section>
-<section id="economy" class="section panel reveal neon-wallet-shell">
-  <div class="section-head"><div><span class="eyebrow">NEON ORB · WALLET CONTROL</span><h2>IDENTIDAD <em>& ECONOMÍA</em></h2><p class="section-note">Dashboard unificado · identidad pública · economía computable · activos externos verificados.</p></div><span class="live-chip" id="walletLiveChip">● MONITORIZANDO</span></div>
-  <div id="walletDashboard" aria-live="polite"></div>
 </section>
 <section id="radio" class="section panel reveal">
   <div class="section-head radio-section-head"><div><span class="eyebrow">LIVE RADIO NETWORK</span><h2>RADIO <em>STATION GRID</em></h2><p class="section-note">Red de emisoras · reconexión automática · estado en tiempo real</p></div><div class="radio-network-status"><span class="pill" id="radioNetworkPill"><i></i> <b id="radioNetworkState">RED LISTA</b></span><button class="btn mini radio-refresh" id="radioRefresh" type="button" title="Comprobar emisoras">↻ <span>ACTUALIZAR</span></button></div></div>
@@ -90,6 +85,10 @@
 </div>
 </section>
 <section id="tienda" class="section panel reveal" aria-hidden="true"><div class="section-head"><div><span class="eyebrow">DIGITAL SHOP</span><h2>TIENDA <em>NEON</em></h2></div></div><div class="shop-grid"><article class="product"><div class="product-art"><span>NEON</span><b>PLAYER X</b></div><div><h3>Multimedia Neon Player X</h3><p>Acceso digital · unidad</p><strong>0,99 €</strong></div><button class="btn primary add" data-product="Multimedia Neon Player X" data-price="0.99">AÑADIR AL CARRITO</button></article><aside class="cart"><div class="cart-head"><h3>🛒 TU PEDIDO</h3><b id="cartTotal">0,00 €</b></div><div id="cartItems" class="cart-items"><p>Tu carrito está vacío.</p></div><div class="delivery"><label><input type="radio" name="delivery" value="recogida" checked> Recogida · Renfe Azuqueca <b>0 €</b></label><label><input type="radio" name="delivery" value="domicilio"> A domicilio <b>Confirmar coste</b></label></div><input id="customerName" placeholder="Nombre completo"><input id="customerPhone" placeholder="Teléfono de contacto"><input id="customerAddress" placeholder="Dirección de entrega (si aplica)"><input id="deliveryDate" type="date"><div class="checkout"><button id="whatsapp" class="btn whatsapp">WHATSAPP PEDIDO</button><button id="paypal" class="btn paypal">PAYPAL</button></div></aside></div></section>
+<section id="wallet" class="section panel reveal">
+  <div class="section-head"><div><span class="eyebrow">UNIFIED ECONOMY · V11.7</span><h2>NEON <em>WALLET</em></h2><p class="section-note">Identidad pública, balances computables y activos externos observados desde el bridge local.</p></div><span class="pill"><i></i> REAL / COMPUTABLE</span></div>
+  <div id="walletDashboard"></div>
+</section>
 <section id="control" class="section panel reveal">
   <div class="section-head"><div><span class="eyebrow">CONTROL CENTER · V5.6 → V8.8</span><h2>NEON <em>CONTROL</em></h2></div><span class="pill"><i></i> CUMULATIVE</span></div>
   <div class="control-grid">
@@ -122,10 +121,5 @@
 <script src="neon-ai.config.js"></script>
 <script src="creator-gift.bridge.js"></script>
 <script src="script.js"></script>
-<script type="module">
-import { mountWalletDashboard } from './UI/wallet-dashboard.js';
-import { startEconomicAutonomy } from './core/economic-autonomy.js';
-mountWalletDashboard(document.getElementById('walletDashboard'));
-startEconomicAutonomy({intervalMs:60000,context:()=>({orbState:window.__neonOrbAutonomous?.state||'UNKNOWN',energy:window.__neonOrbAutonomous?.life?.energy??null})});
-</script>
+<script type="module">import { mountWalletDashboard } from './UI/wallet-dashboard.js'; mountWalletDashboard(document.querySelector('#walletDashboard')); </script>
 </body></html>

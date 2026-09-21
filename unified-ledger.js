@@ -73,8 +73,8 @@ export class UnifiedLedger {
     if (cur === 'NXC') this.state.internal.nxc += signed;
     else if (cur === 'CREDITS') this.state.internal.credits += signed;
     else if (cur === 'BITS') this.state.internal.bits += signed;
-    else if (cur === 'BTC_SATOSHIS') { if (status === 'verified') this.state.external.btcSatoshis += signed; }
-    else if (cur === 'EUR') { if (status === 'verified') this.state.external.fiatEuroBalance += signed; }
+    else if (cur === 'BTC_SATOSHIS') this.state.external.btcSatoshis += signed;
+    else if (cur === 'EUR') this.state.external.fiatEuroBalance += signed;
     else throw new Error(`Unsupported currency: ${cur}`);
 
     this.state.history.push(entry);
@@ -98,11 +98,3 @@ export class UnifiedLedger {
 
 export const unifiedLedger = new UnifiedLedger();
 export { STORAGE_KEY };
-
-
-export const ECONOMY_PROVENANCE = Object.freeze({
-  model:'REAL_COMPUTABLE_VIVA',
-  internal:'NEON_ORB_WORK',
-  local:'LOCAL_PERSISTENCE',
-  external:'NETWORK_CONFIRMED_ONLY'
-});

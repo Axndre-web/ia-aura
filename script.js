@@ -1,76 +1,4 @@
-const $=s=>document.querySelector(s);
-const NEON_REAL_IDENTITY = window.NEON_ORB_EXTERNAL_IDENTITY || Object.freeze({handle:'@neonorb',solana:{primary:'AvcMD59dTTTnHKzfdQtF9AcSzgSNcqCWEkcUYx4BnUeh',backups:['5ifQth8MCG9LgnuxJaTaNcRgfmpxhsc9bMZexy2FMTJ3']},bitcoin:{primary:'bc1qs9dvc02xl8ury20xlsya8xda4cpygzhs0ll9ym',backups:['bc1qg8ykmeh2dmgq2l6d37zu702vlh6mn72k556ty5']}});
-window.__neonEconomyProvenance = Object.freeze({
-  model:'REAL_COMPUTABLE_VIVA',
-  internal:'WORK_EXECUTION_IN_NEON_PLAYER_X',
-  local:'PERSISTED_BROWSER_STATE',
-  network:'OBSERVED_EXTERNAL_SERVICES_ONLY',
-  external:'BLOCKCHAIN_CONFIRMED_WHEN_NETWORK_CONFIRMATION_EXISTS',
-  authority:'NEON_ORB_DECISION_AUTHORITY'
-});
-function neonIdentitySnapshot(){return {handle:NEON_REAL_IDENTITY.handle,solanaPrimary:NEON_REAL_IDENTITY.solana.primary,solanaBackups:[...NEON_REAL_IDENTITY.solana.backups],bitcoinPrimary:NEON_REAL_IDENTITY.bitcoin.primary,bitcoinBackups:[...NEON_REAL_IDENTITY.bitcoin.backups]}}
-window.neonOrbIdentitySnapshot=neonIdentitySnapshot;
-function neonBridgeUrl(kind){
-  const configured=window.NEON_BRIDGE_HEALTH_URL;
-  if(configured){
-    try{
-      const u=new URL(configured,location.href);
-      // Never request an HTTP localhost bridge from an HTTPS public page: browsers
-      // correctly block this as mixed content. Public mode is handled below.
-      if(location.protocol==='https:' && u.protocol==='http:') return null;
-      return kind==='telemetry' ? u.href.replace(/\/health\/?$/,'/telemetry') : u.href;
-    }catch(_){ return null; }
-  }
-  if(location.protocol==='http:' || location.protocol==='file:'){
-    return kind==='telemetry' ? 'http://127.0.0.1:8787/telemetry' : 'http://127.0.0.1:8787/health';
-  }
-  return null;
-}
-async function neonFetchJSON(url, timeout=4500){
-  const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),timeout);
-  try{const r=await fetch(url,{cache:'no-store',signal:ctl.signal});if(!r.ok)throw new Error('HTTP '+r.status);return await r.json();}
-  finally{clearTimeout(timer);}
-}
-async function neonPublicTelemetry(){
-  const out={ok:false,status:'OBSERVABLE',mode:'READ_ONLY',network:'mainnet-beta',signer:'PUBLIC_READ_ONLY',publicAddress:NEON_REAL_IDENTITY.solana.primary,checkedAt:new Date().toISOString(),solanaBalanceLamports:null,solanaBalanceStatus:'UNAVAILABLE',bitcoinAddress:NEON_REAL_IDENTITY.bitcoin.primary,bitcoinSatoshis:null,bitcoinBalanceStatus:'UNAVAILABLE'};
-  // The public RPC endpoint accepts JSON-RPC POST; fetch JSON helper is GET-only, so issue separately.
-  try{
-    const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),4500);
-    const r=await fetch('https://api.mainnet-beta.solana.com',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'getBalance',params:[NEON_REAL_IDENTITY.solana.primary,{commitment:'confirmed'}]}),cache:'no-store',signal:ctl.signal});
-    clearTimeout(timer);
-    if(r.ok){const d=await r.json();const v=d?.result?.value;if(Number.isFinite(v)){out.solanaBalanceLamports=Number(v);out.solanaBalanceStatus='VERIFIED';}}
-  }catch(_){ }
-  try{
-    const d=await neonFetchJSON(`https://mempool.space/api/address/${encodeURIComponent(NEON_REAL_IDENTITY.bitcoin.primary)}`);
-    const st=d?.chain_stats||{}; const value=Number(st.funded_txo_sum||0)-Number(st.spent_txo_sum||0);
-    if(Number.isFinite(value)){out.bitcoinSatoshis=value;out.bitcoinBalanceStatus='VERIFIED';}
-  }catch(_){ }
-  out.ok=out.solanaBalanceStatus==='VERIFIED'||out.bitcoinBalanceStatus==='VERIFIED';
-  return out;
-}
-async function neonSolanaBridgeHealth(){
-  const url=neonBridgeUrl('health');
-  if(!url){
-    const data={ok:false,status:'OBSERVABLE',mode:'READ_ONLY',reason:'PUBLIC_HOST_NO_LOCAL_BRIDGE',network:'mainnet-beta',signer:'PUBLIC_READ_ONLY',publicAddress:NEON_REAL_IDENTITY.solana.primary,checkedAt:new Date().toISOString()};
-    window.__neonSolanaBridgeHealth=data;window.dispatchEvent(new CustomEvent('neon:bridge-health',{detail:data}));return data;
-  }
-  try{const data=await neonFetchJSON(url);window.__neonSolanaBridgeHealth=data;window.dispatchEvent(new CustomEvent('neon:bridge-health',{detail:data}));return data;}
-  catch(_){const data={ok:false,status:'OFFLINE',mode:'READ_ONLY',reason:'BRIDGE_UNAVAILABLE',checkedAt:new Date().toISOString()};window.__neonSolanaBridgeHealth=data;window.dispatchEvent(new CustomEvent('neon:bridge-health',{detail:data}));return data;}
-}
-window.neonSolanaBridgeHealth=neonSolanaBridgeHealth;
-async function neonBridgeTelemetry(){
-  const url=neonBridgeUrl('telemetry');
-  if(url){
-    try{const data=await neonFetchJSON(url);window.__neonBridgeTelemetry=data;window.__neonSolanaBridgeHealth=data;window.dispatchEvent(new CustomEvent('neon:bridge-health',{detail:data}));return data;}catch(_){ }
-  }
-  const data=await neonPublicTelemetry();
-  window.__neonBridgeTelemetry=data;window.__neonSolanaBridgeHealth=data;window.dispatchEvent(new CustomEvent('neon:bridge-health',{detail:data}));return data;
-}
-window.neonBridgeTelemetry=neonBridgeTelemetry;
-neonBridgeTelemetry().catch(()=>{});
-setInterval(()=>neonBridgeTelemetry().catch(()=>{}),30000);
-
-const $$=s=>[...document.querySelectorAll(s)];
+const $=s=>document.querySelector(s);const $$=s=>[...document.querySelectorAll(s)];
 const stations=[
  ['LOS40','40','Éxitos · Pop','#ff315d','https://play.los40.com/'],['LOS40 Classic','40C','Clásicos','#ff5b35','https://play.los40.com/'],['LOS40 Dance','40D','Dance · Electrónica','#b74cff','https://play.los40.com/'],['LOS40 Urban','40U','Urban · Hits','#ff3ba7','https://play.los40.com/'],['Europa FM','EF','Pop · Rock','#7b5cff','https://www.europafm.com/'],['KISS FM','KISS','Pop · Rock','#ff4d8d','https://www.kissfm.es/'],['Radiolé','RL','Española','#ff9d28','https://www.radiole.com/'],['Rock FM','RF','Rock · Clásicos','#e33b4e','https://www.rockfm.fm/'],['Radio MARCA','RM','Deporte · Directo','#e52435','https://www.marca.com/radio.html'],['COPE Deportes','COPE','Deportes · Directo','#50a7ff','https://www.cope.es/'],['RAC1','R1','Actualidad · Deporte','#ffcc31','https://www.rac1.cat/'],['RNE','RNE','Radio Nacional','#49d7ff','https://www.rtve.es/radio/']
 ];
@@ -537,33 +465,20 @@ bindMainEvents();renderMainQueue();
           });
         },
         onClick:()=>payStatus('Abriendo checkout seguro de PayPal…'),
-        onApprove:async (data,actions)=>{
+        onApprove:(data,actions)=>{
           if(paypalBusy)return;
           paypalBusy=true;payStatus('Procesando el pago…');
           const snapshot=pendingOrder?.snapshot||cartSnapshot();
-          return actions.order.capture().then(async details=>{
+          return actions.order.capture().then(details=>{
             const capture=details?.purchase_units?.[0]?.payments?.captures?.[0];
             const captureStatus=capture?.status||details?.status;
             if(captureStatus!=='COMPLETED')throw new Error('El pago no quedó completado');
             const id=data?.orderID||details?.id||'—';
-            orderHistory.push({id,total:snapshot.total,items:snapshot.items.map(x=>x.name+' × '+x.qty).join(', '),date:new Date().toLocaleString('es-ES'),status:'CAPTURED_PENDING_RECONCILIATION'});
+            orderHistory.push({id,total:snapshot.total,items:snapshot.items.map(x=>x.name+' × '+x.qty).join(', '),date:new Date().toLocaleString('es-ES')});
             saveOrders();renderOrders();updateControl();
             localStorage.neonLastPayPalOrder=id;localStorage.neonLastPayPalDate=new Date().toISOString();
-            try{
-              const [{recordApprovedOrder},{verifyPayPalOrder}]=await Promise.all([import('./integrations/paypal-checkout.js'),import('./integrations/revenue-gateway.js')]);
-              recordApprovedOrder({orderID:id,amountEUR:snapshot.total,verified:false,metadata:{items:snapshot.items}});
-              const verification=await verifyPayPalOrder(id,snapshot.total);
-              if(verification?.settlement?.status==='VERIFIED'){
-                orderHistory[orderHistory.length-1].status='VERIFIED_REVENUE';saveOrders();renderOrders();
-                payStatus('✓ Pago verificado · ingreso real registrado · '+id,true);toast('Ingreso real verificado');
-              }else{
-                payStatus('✓ Pago capturado · conciliación de tesorería pendiente · '+id,true);toast('Pago recibido · verificación pendiente');
-              }
-            }catch(err){
-              console.warn('NEON REVENUE RECONCILIATION',err);
-              payStatus('✓ Pago capturado · verificación de tesorería pendiente · '+id,true);
-            }
-            cart=[];renderCart();pendingOrder=null;paypalBusy=false;setTimeout(closePay,1800);
+            payStatus('✓ Pago completado correctamente · Pedido '+id,true);toast('Pago PayPal completado');
+            cart=[];renderCart();pendingOrder=null;paypalBusy=false;setTimeout(closePay,1500);
           }).catch(err=>{paypalBusy=false;payStatus('⚠ PayPal informó de un error. Tu carrito sigue intacto.');console.error('NEON PAYPAL CAPTURE',err);toast('PayPal no pudo confirmar el pago')});
         },
         onCancel:()=>{paypalBusy=false;payStatus('Pago cancelado. Tu carrito sigue intacto.');toast('Pago cancelado')},
@@ -797,5 +712,3 @@ bindMainEvents();renderMainQueue();
   renderGift(); updateTelemetry(); setInterval(updateTelemetry,700);
   setInterval(()=>{if(gift.local?.received&&!gift.verification?.confirmed)checkRealGift()},120000);
 })();
-
-setInterval(()=>{ neonSolanaBridgeHealth().catch(()=>{}); }, 30000);

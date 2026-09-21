@@ -1,33 +1,5 @@
-import express from 'express';
-import Stripe from 'stripe';
-import dotenv from 'dotenv';
-import { handleAIRequest } from './aiservice.js';
-import { processStripeEvent } from './billingautomation.js';
-
-dotenv.config();
-
-const app = express();
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-
-app.use(express.static('.'));
-
-app.post('/api/generate', express.json(), handleAIRequest);
-
-app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-const sig = req.headers['stripe-signature'];
-let event;
-
-try {
-event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
-} catch (err) {
-return res.status(400).send(`Webhook Error: ${err.message}`);
-}
-
-await processStripeEvent(event);
-res.status(200).json({ received: true });
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-console.log(`[SISTEMA] Servidor activo en puerto ${PORT}`);
-});
+const CACHE='neon-player-x-v11-6-economic-engine-1';
+const APP=['./','./index.html','./style.css','./script.js','./creator-gift.bridge.js','./neon-ai.config.js','./UI/styles-economy.css','./UI/wallet-dashboard.js','./core/unified-ledger.js','./core/orb-work-bridge.js','./core/economic-engine.js','./core/economic-autonomy.js','./integrations/revenue-gateway.js','./manifest.webmanifest','./icon-48.png','./icon-96.png','./icon-180.png','./icon-192.png','./icon-512.png','./favicon-32.png','./app-icon.jpg'];
+self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(APP)).then(()=>self.skipWaiting())));
+self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
+self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;e.respondWith(caches.match(e.request).then(cached=>cached||fetch(e.request).then(res=>{const copy=res.clone();if(new URL(e.request.url).origin===location.origin)caches.open(CACHE).then(c=>c.put(e.request,copy));return res}).catch(()=>e.request.mode==='navigate'?caches.match('./index.html'):undefined)))})

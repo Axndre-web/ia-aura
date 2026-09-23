@@ -9,9 +9,9 @@ export function recordApprovedOrder({ orderID, amountEUR, metadata = {}, verifie
     throw new Error('Valid orderID and positive amountEUR required');
   }
   if (!verified) {
-    return unifiedLedger.registerTransaction({
+    return unifiedLedger.recordPendingExternal({
       source: 'PAYPAL_CHECKOUT', amount: Number(amountEUR), currency: 'EUR',
-      txHash: orderID, status: 'pending-verification', metadata
+      txHash: orderID, metadata
     });
   }
   return unifiedLedger.recordExternalSettlement({

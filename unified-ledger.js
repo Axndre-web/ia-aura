@@ -57,12 +57,13 @@ export class UnifiedLedger {
     return JSON.parse(JSON.stringify(this.state));
   }
 
-  registerTransaction({ source, amount, currency, txHash = null, timestamp = Date.now(), direction = 'credit', workId = null, status = 'recorded', metadata = {} }) {
+  registerTransaction({ source, amount, currency, txHash = null, timestamp = Date.now(), direction = 'credit', workId = null, status = 'recorded', metadata = {}, affectBalance = true }) {
     const value = num(amount);
     const cur = String(currency || '').toUpperCase();
     if (!source || !cur || !Number.isFinite(value)) throw new Error('Invalid transaction');
 
     const signed = direction === 'debit' ? -Math.abs(value) : Math.abs(value);
+    const balanceAffects = affectBalance === true;
     const entry = {
       id: `${timestamp}-${Math.random().toString(36).slice(2, 9)}`,
       source: String(source), amount: signed, currency: cur,
@@ -70,12 +71,16 @@ export class UnifiedLedger {
       workId: workId || null, status, metadata: { ...metadata }
     };
 
-    if (cur === 'NXC') this.state.internal.nxc += signed;
-    else if (cur === 'CREDITS') this.state.internal.credits += signed;
-    else if (cur === 'BITS') this.state.internal.bits += signed;
-    else if (cur === 'BTC_SATOSHIS') this.state.external.btcSatoshis += signed;
-    else if (cur === 'EUR') this.state.external.fiatEuroBalance += signed;
-    else throw new Error(`Unsupported currency: ${cur}`);
+    if (!['NXC', 'CREDITS', 'BITS', 'BTC_SATOSHIS', 'EUR'].includes(cur)) {
+      throw new Error(`Unsupported currency: ${cur}`);
+    }
+    if (balanceAffects) {
+      if (cur === 'NXC') this.state.internal.nxc += signed;
+      else if (cur === 'CREDITS') this.state.internal.credits += signed;
+      else if (cur === 'BITS') this.state.internal.bits += signed;
+      else if (cur === 'BTC_SATOSHIS') this.state.external.btcSatoshis += signed;
+      else if (cur === 'EUR') this.state.external.fiatEuroBalance += signed;
+    }
 
     this.state.history.push(entry);
     this.#save();
@@ -87,8 +92,20 @@ export class UnifiedLedger {
     return this.registerTransaction({ source: 'NEON_ORB_WORK', workId, currency, amount, metadata });
   }
 
+  recordPendingExternal({ source, amount, currency, txHash = null, metadata = {} }) {
+    return this.registerTransaction({
+      source, amount, currency, txHash,
+      status: 'pending-verification', metadata,
+      affectBalance: false
+    });
+  }
+
   recordExternalSettlement({ source, amount, currency, txHash, metadata = {} }) {
-    return this.registerTransaction({ source, amount, currency, txHash, status: 'verified', metadata });
+    return this.registerTransaction({
+      source, amount, currency, txHash,
+      status: 'verified', metadata,
+      affectBalance: true
+    });
   }
 
   reset() {

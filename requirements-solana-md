@@ -1,0 +1,2 @@
+# Bridge health mode requires Python stdlib only.
+# Add a reviewed Solana SDK only when a concrete on-chain program format is defined.

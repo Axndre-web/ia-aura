@@ -1,0 +1,7 @@
+node_modules/
+.env
+keypair.json
+keypair.js
+__pycache__/
+data/
+*.log

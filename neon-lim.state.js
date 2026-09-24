@@ -1,0 +1,42 @@
+module.exports = {
+  version: "11.7.1",
+  startedAt: 1790155850.1206267,
+  cycles: 1814,
+  decision: "OBSERVE_NETWORK",
+  zone: "LOCAL-BRIDGE",
+  energy: 82,
+  curiosity: 72,
+  attachment: 100,
+  journeys: 0,
+  resources: {
+    NXC: 0,
+    CREDITS: 0,
+    BITS: 0,
+  },
+  lastTick: 1790170601.0037458,
+  network: {
+    solana: {
+      address: "AvcMD59dTTTnHKzfdQtF9AcSzgSNcqCWEkcUYx4BnUeh",
+      network: "mainnet-beta",
+      status: "observed",
+      lamports: 0,
+      sol: 0.0,
+      observedAt: 1790170590.8618646,
+    },
+    bitcoin: {
+      address: "bc1qs9dvc02xl8ury20xlsya8xda4cpygzhs0ll9ym",
+      network: "bitcoin-mainnet",
+      status: "observed",
+      satoshis: 0,
+      btc: 0.0,
+      observedAt: 1790170590.9852695,
+    },
+  },
+  work: {
+    jobs: [],
+    settlements: [],
+    source: "local-bridge",
+  },
+  receipts: [],
+  lastNetworkRefresh: 1790170590.9852695,
+};

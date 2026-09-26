@@ -7,7 +7,7 @@ const clavePrivadaBase58 = [116, 15, 126, 49, 1, 181, 56, 29, 105, 229, 99, 59, 
 try {
   const secretKey = Array.from(bs58.decode(clavePrivadaBase58));
   fs.writeFileSync('keypair.json', JSON.stringify(secretKey, null, 2));
-  console.log('✅ ¡keypair.json generado con éxito!');true
+  console.log('✅ ¡keypair.json generado con éxito!');
 } catch (e) {
-  console.error('❌ Error al procesar la clave:', e.message);false
+  console.error('❌ Error al procesar la clave:', e.message);
 }

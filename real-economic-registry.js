@@ -1,78 +1,50 @@
-import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 
-const now = () => new Date().toISOString();
-const uid = prefix => `${prefix}_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
+const file = process.env.NEON_REAL_ASSET_REGISTRY_FILE || path.join(process.cwd(), 'data', 'real-economic-assets.json');
+const positive = v => Number.isFinite(Number(v)) && Number(v) > 0;
+
+function load() {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
+  catch { return { version: 1, assets: [], audit: [] }; }
+}
+function save(state) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(state, null, 2), { mode: 0o600 });
+  fs.renameSync(tmp, file);
+}
 
 export class RealEconomicRegistry {
-  constructor(store) {
-    this.store = store;
-    this.state = { version: 1, assets: [], history: [] };
-  }
-
-  async init() {
-    this.state = await this.store.init({ version: 1, assets: [], history: [] });
-    this.state = {
-      version: 1,
-      assets: Array.isArray(this.state.assets) ? this.state.assets : [],
-      history: Array.isArray(this.state.history) ? this.state.history : []
-    };
-    return this.status();
-  }
-
-  async #save() { await this.store.write(this.state); }
-
-  status() {
-    return {
-      version: this.state.version,
-      computableAssets: this.state.assets.length,
-      assets: structuredClone(this.state.assets)
-    };
-  }
-
-  async registerVerifiedAsset({
-    provider, providerRef, amount, currency = 'EUR',
-    opportunityId = null, workRef = null, deliverableRef = null,
-    verification = {}, metadata = {}
-  } = {}) {
-    if (verification?.verified !== true) throw new Error('REAL_ASSET_VERIFICATION_REQUIRED');
-    if (!provider || !providerRef || !workRef || !deliverableRef) {
-      throw new Error('REAL_ASSET_EVIDENCE_REQUIRED');
-    }
-    const numericAmount = Number(amount);
-    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-      throw new Error('REAL_ASSET_AMOUNT_REQUIRED');
-    }
-
-    const duplicate = this.state.assets.find(
-      x => x.provider === String(provider) && x.providerRef === String(providerRef)
-    );
+  constructor() { this.state = load(); }
+  snapshot() { return structuredClone(this.state); }
+  register(asset = {}) {
+    if (asset.verification?.verified !== true) throw new Error('REAL_ASSET_VERIFICATION_REQUIRED');
+    if (!asset.provider || !asset.providerRef || !asset.workRef || !asset.deliverableRef) throw new Error('REAL_ASSET_EVIDENCE_INCOMPLETE');
+    if (!positive(asset.amountEUR)) throw new Error('REAL_ASSET_POSITIVE_AMOUNT_REQUIRED');
+    const duplicate = this.state.assets.find(x => x.provider === asset.provider && x.providerRef === asset.providerRef);
     if (duplicate) return duplicate;
-
-    const asset = {
-      id: uid('asset'),
-      kind: 'VERIFIED_EXTERNAL_ASSET',
-      provider: String(provider),
-      providerRef: String(providerRef),
-      amount: numericAmount,
-      currency: String(currency).toUpperCase(),
-      opportunityId: opportunityId || null,
-      workRef: String(workRef),
-      deliverableRef: String(deliverableRef),
-      verifiedAt: now(),
-      verification: { ...verification, verified: true },
-      metadata: { ...metadata }
+    const record = {
+      id: asset.id || `asset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      status: 'VERIFIED_REAL_ASSET',
+      recordedAt: new Date().toISOString(),
+      provider: String(asset.provider),
+      providerRef: String(asset.providerRef),
+      workRef: String(asset.workRef),
+      deliverableRef: String(asset.deliverableRef),
+      amountEUR: Number(asset.amountEUR),
+      currency: asset.currency || 'EUR',
+      opportunityId: asset.opportunityId || null,
+      verification: structuredClone(asset.verification),
+      metadata: asset.metadata || {}
     };
-
-    this.state.assets.push(asset);
-    this.state.history.push({
-      id: uid('asset-event'),
-      at: now(),
-      type: 'REAL_ASSET_REGISTERED',
-      assetId: asset.id
-    });
-    this.state.assets = this.state.assets.slice(-5000);
-    this.state.history = this.state.history.slice(-10000);
-    await this.#save();
-    return asset;
+    this.state.assets.push(record);
+    this.state.audit.push({ at: record.recordedAt, type: 'REAL_ASSET_REGISTERED', assetId: record.id });
+    this.state.assets = this.state.assets.slice(-10000);
+    this.state.audit = this.state.audit.slice(-10000);
+    save(this.state);
+    return record;
   }
 }
+
+export const realEconomicRegistry = new RealEconomicRegistry();

@@ -3,9 +3,10 @@ const n=(v,d=0)=>Number.isFinite(Number(v))?Number(v):d;
 const allowedHosts=()=>new Set(String(process.env.NEON_ALLOWED_PROVIDER_HOSTS||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean));
 function assertAllowed(url){const u=new URL(url); const hosts=allowedHosts(); if (!hosts.size || !hosts.has(u.hostname.toLowerCase())) throw new Error('PROVIDER_HOST_NOT_ALLOWLISTED'); return u;}
 
-export function calculateConversion({fromAsset,toAsset,amountEUR,quotedReceiveEUR,feeEUR=0,networkEUR=0,slippageEUR=0,expiresAt=null}={}) {
+export function calculateConversion({fromAsset,toAsset,amountEUR,quotedReceiveEUR,feeEUR=0,networkEUR=0,slippageEUR=0,expiresAt=null,quoteRef=null}={}) {
   const amount=n(amountEUR), receive=n(quotedReceiveEUR), costs=n(feeEUR)+n(networkEUR)+n(slippageEUR);
-  return { fromAsset:String(fromAsset||''), toAsset:String(toAsset||''), amountEUR:amount, quotedReceiveEUR:receive, feeEUR:n(feeEUR), networkEUR:n(networkEUR), slippageEUR:n(slippageEUR), netReceiveEUR:receive-costs, expiresAt, economicallyPositive:receive-costs>amount };
+  const expired = expiresAt ? Date.parse(expiresAt) <= Date.now() : false;
+  return { fromAsset:String(fromAsset||''), toAsset:String(toAsset||''), amountEUR:amount, quotedReceiveEUR:receive, feeEUR:n(feeEUR), networkEUR:n(networkEUR), slippageEUR:n(slippageEUR), netReceiveEUR:receive-costs, expiresAt, quoteRef, expired, economicallyPositive:receive-costs>amount && !expired };
 }
 
 export async function fetchConversionQuote(url, payload, {timeoutMs=8000}={}) {

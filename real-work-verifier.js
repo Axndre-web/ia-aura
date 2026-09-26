@@ -1,80 +1,43 @@
-import crypto from 'node:crypto';
+import { assertAllowedForExecution } from './provider-security.js';
 
-const allowedHosts = () => new Set(
-  String(process.env.NEON_ALLOWED_PROVIDER_HOSTS || '')
-    .split(',')
-    .map(s => s.trim().toLowerCase())
-    .filter(Boolean)
-);
+const timeout = ms => Math.max(1000, Number(ms) || 8000);
 
-function assertAllowedHttps(raw) {
-  const url = new URL(raw);
-  if (url.protocol !== 'https:') throw new Error('REALITY_VERIFIER_HTTPS_REQUIRED');
-  const hosts = allowedHosts();
-  if (!hosts.size || !hosts.has(url.hostname.toLowerCase())) {
-    throw new Error('REALITY_VERIFIER_HOST_NOT_ALLOWLISTED');
-  }
-  return url;
-}
-
-function stableDigest(value) {
-  return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
-}
-
-/**
- * Verifies that an external opportunity corresponds to an actual, currently
- * actionable piece of work. The verifier is intentionally attestation-based:
- * the external source must be allowlisted and return a machine-verifiable
- * statement with a work reference, deliverable reference and settlement path.
- */
 export async function verifyRealWork(opportunity, { timeoutMs = 8000 } = {}) {
-  if (!opportunity?.id) throw new Error('OPPORTUNITY_ID_REQUIRED');
-  if (!opportunity.verificationUrl) {
-    return { verified: false, code: 'REALITY_VERIFICATION_URL_REQUIRED' };
-  }
+  if (!opportunity?.id) return { verified: false, code: 'OPPORTUNITY_ID_REQUIRED' };
+  const url = opportunity.verificationUrl;
+  if (!url) return { verified: false, code: 'REAL_WORK_VERIFICATION_ENDPOINT_REQUIRED' };
 
-  const url = assertAllowedHttps(opportunity.verificationUrl);
+  const target = assertAllowedForExecution(url);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Math.max(1000, timeoutMs));
-
+  const timer = setTimeout(() => controller.abort(), timeout(timeoutMs));
   try {
-    const response = await fetch(url, {
+    const response = await fetch(target, {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json' },
       body: JSON.stringify({
         opportunityId: opportunity.id,
-        digest: stableDigest({
-          id: opportunity.id,
-          title: opportunity.title,
-          source: opportunity.source,
-          revenueEUR: opportunity.revenueEUR,
-          spendEUR: opportunity.spendEUR
-        })
+        workRef: opportunity.workRef ?? null,
+        deliverableRef: opportunity.deliverableRef ?? null,
+        source: opportunity.source ?? null
       }),
       signal: controller.signal
     });
-
-    if (!response.ok) {
-      return { verified: false, code: `REALITY_VERIFIER_HTTP_${response.status}` };
-    }
-
-    const attestation = await response.json();
-    const verified =
-      attestation?.verified === true &&
-      String(attestation.opportunityId || '') === String(opportunity.id) &&
-      Boolean(attestation.workRef) &&
-      Boolean(attestation.deliverableRef) &&
-      Boolean(attestation.settlementProvider);
-
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return { verified: false, code: `VERIFIER_HTTP_${response.status}`, data };
+    const verified = data.verified === true
+      && String(data.opportunityId ?? opportunity.id) === String(opportunity.id)
+      && Boolean(data.workRef)
+      && Boolean(data.deliverableRef)
+      && Boolean(data.provider);
     return {
       verified,
-      code: verified ? 'REAL_WORK_VERIFIED' : 'REAL_WORK_ATTESTATION_INVALID',
-      provider: attestation.provider || opportunity.authorizedProvider || null,
-      workRef: attestation.workRef || null,
-      deliverableRef: attestation.deliverableRef || null,
-      settlementProvider: attestation.settlementProvider || null,
-      attestedAt: attestation.attestedAt || null,
-      attestation
+      code: verified ? 'REAL_WORK_VERIFIED' : 'REAL_WORK_ATTESTATION_INCOMPLETE',
+      workRef: data.workRef ?? null,
+      deliverableRef: data.deliverableRef ?? null,
+      provider: data.provider ?? null,
+      providerRef: data.providerRef ?? null,
+      verifiedAt: data.verifiedAt ?? new Date().toISOString(),
+      data
     };
   } finally {
     clearTimeout(timer);

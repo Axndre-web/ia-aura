@@ -1,61 +1,38 @@
 import { neonOrbGovernor } from './economic-governor.js';
 import { assertAllowedForExecution } from './provider-security.js';
 
-function authorizedProviderUrl(provider) {
-  let map = {};
-  try { map = JSON.parse(process.env.NEON_AUTHORIZED_EXECUTION_PROVIDERS || '{}'); }
-  catch { throw new Error('AUTHORIZED_PROVIDER_CONFIG_INVALID'); }
-  const configured = map[String(provider || '')];
-  if (!configured) throw new Error('AUTHORIZED_PROVIDER_NOT_CONFIGURED');
-  return configured;
-}
+const providers = () => new Set(String(process.env.NEON_AUTHORIZED_EXECUTION_PROVIDERS || '').split(',').map(x => x.trim()).filter(Boolean));
+const endpoints = () => { try { return JSON.parse(process.env.NEON_AUTHORIZED_EXECUTION_ENDPOINTS || '{}'); } catch { return {}; } };
 
-/**
- * Executes only work that has passed the real-work attestation and the
- * NEON_ORB policy. A successful HTTP response is a submission, not revenue.
- * Revenue is recognized only after an independent settlement verification.
- */
 export async function executeOpportunity(opportunity, payload = {}) {
-  if (opportunity?.realityVerified !== true) {
-    return { ok: false, code: 'REAL_WORK_NOT_VERIFIED' };
-  }
-  const provider = opportunity.authorizedProvider;
-  if (!provider) return { ok: false, code: 'AUTHORIZED_PROVIDER_REQUIRED' };
-
   const auth = neonOrbGovernor.authorizeOpportunity(opportunity);
   if (!auth.ok) return { ok:false, ...auth };
-
-  const configuredUrl = authorizedProviderUrl(provider);
+  if (!opportunity.authorizedProvider || !providers().has(String(opportunity.authorizedProvider))) return { ok:false, code:'AUTHORIZED_PROVIDER_NOT_CONFIGURED' };
+  const configuredUrl = endpoints()[String(opportunity.authorizedProvider)];
+  if (!configuredUrl) return { ok:false, code:'AUTHORIZED_PROVIDER_ENDPOINT_NOT_CONFIGURED' };
   const url = assertAllowedForExecution(configuredUrl);
   const controller = new AbortController();
   const timer = setTimeout(()=>controller.abort(), 15000);
-
   try {
-    const r = await fetch(url, {
-      method:'POST',
-      headers:{'content-type':'application/json','accept':'application/json'},
-      body:JSON.stringify({
-        opportunityId: opportunity.id,
-        workRef: opportunity.realityVerification?.workRef || null,
-        deliverableRef: opportunity.realityVerification?.deliverableRef || null,
-        ...payload
-      }),
-      signal:controller.signal
-    });
+    const r = await fetch(url, { method:'POST', headers:{'content-type':'application/json','accept':'application/json'}, body:JSON.stringify({opportunityId:opportunity.id,...payload}), signal:controller.signal });
     const data = await r.json().catch(()=>({}));
-    const accepted = r.ok && data?.accepted === true;
-    const status = accepted ? 'SUBMITTED' : 'FAILED';
-    neonOrbGovernor.recordExecution({
-      opportunityId:opportunity.id,
-      provider,
-      status,
+    if (!r.ok) {
+      neonOrbGovernor.recordExecution({ opportunityId:opportunity.id, status:'FAILED', spendEUR:Number(opportunity.spendEUR||0), revenueEUR:0, netProfitEUR:Number(opportunity.netProfitEUR||0), providerResult:data });
+      return {ok:false,status:'FAILED',httpStatus:r.status,data};
+    }
+    const pending = {
+      opportunityId: opportunity.id,
+      status:'EXECUTED_PENDING_SETTLEMENT',
       spendEUR:Number(opportunity.spendEUR||0),
-      expectedRevenueEUR:Number(opportunity.revenueEUR||0),
+      revenueEUR:0,
       netProfitEUR:Number(opportunity.netProfitEUR||0),
+      provider: opportunity.authorizedProvider,
+      providerRef: data.providerRef || data.executionId || data.jobId || null,
+      workRef: opportunity.workRef || data.workRef || null,
+      deliverableRef: opportunity.deliverableRef || data.deliverableRef || null,
       providerResult:data
-    });
-    return {ok:accepted,status,httpStatus:r.status,provider,data};
-  } finally {
-    clearTimeout(timer);
-  }
+    };
+    neonOrbGovernor.recordExecution(pending);
+    return {ok:true,status:pending.status,httpStatus:r.status,data};
+  } finally { clearTimeout(timer); }
 }

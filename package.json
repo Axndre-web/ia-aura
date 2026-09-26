@@ -1,15 +1,18 @@
 {
   "name": "neon-player-x-real-work-unified",
-  "version": "11.7.1",
+  "version": "11.9.0",
   "private": true,
   "type": "module",
-  "description": "NEON PLAYER X — producción Node.js para servir la aplicación estática.",
+  "description": "NEON PLAYER X \u2014 producci\u00f3n Node.js para servir la aplicaci\u00f3n est\u00e1tica.",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "start": "node server.js",
-    "test:security": "node --test tests/ledger-security.test.mjs"
+    "test:security": "node --test tests/ledger-security.test.mjs",
+    "test:economy": "node --test tests/external-economy.test.mjs",
+    "test": "npm run test:security && npm run test:economy",
+    "test:sources": "node --test tests/economic-source-catalog.test.mjs"
   },
   "dependencies": {
     "compression": "^1.8.1",

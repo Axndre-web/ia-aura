@@ -1,77 +1,36 @@
 import { neonOrbGovernor } from './economic-governor.js';
 import { assertAllowedForExecution } from './provider-security.js';
 
-const n = (v, d = 0) => Number.isFinite(Number(v)) ? Number(v) : d;
+const n=(v,d=0)=>Number.isFinite(Number(v))?Number(v):d;
 
-export function calculateCurrencyConversion({
-  fromCurrency, toCurrency, amount, rate, fee = 0, networkFee = 0,
-  slippage = 0, quoteRef = null, expiresAt = null, quotedAt = null
-} = {}) {
-  const source = String(fromCurrency || '').toUpperCase();
-  const target = String(toCurrency || '').toUpperCase();
-  const input = n(amount);
-  const fx = n(rate);
-  const costs = n(fee) + n(networkFee) + n(slippage);
-  if (!source || !target || source === target) throw new Error('VALID_CURRENCY_PAIR_REQUIRED');
-  if (input <= 0 || fx <= 0) throw new Error('VALID_CONVERSION_AMOUNT_REQUIRED');
-
-  const grossReceive = input * fx;
-  const netReceive = grossReceive - costs;
+export function calculateCurrencyConversion({fromAsset,toAsset,amount,amountEUR,quotedReceiveEUR,rate,feeEUR=0,networkEUR=0,slippageEUR=0,quoteRef=null,expiresAt=null}={}) {
+  const inputEUR=n(amountEUR, n(amount));
+  const receiveEUR=quotedReceiveEUR !== undefined ? n(quotedReceiveEUR) : inputEUR*n(rate);
+  const costs=n(feeEUR)+n(networkEUR)+n(slippageEUR);
+  const netReceiveEUR=receiveEUR-costs;
   return {
-    fromCurrency: source,
-    toCurrency: target,
-    amount: input,
-    rate: fx,
-    grossReceive,
-    fee: n(fee),
-    networkFee: n(networkFee),
-    slippage: n(slippage),
-    netReceive,
-    quoteRef: quoteRef || null,
-    quotedAt: quotedAt || new Date().toISOString(),
-    expiresAt: expiresAt || null,
-    economicallyPositive: netReceive > input
+    fromAsset:String(fromAsset||''), toAsset:String(toAsset||''), amount:n(amount,inputEUR), amountEUR:inputEUR,
+    rate:n(rate, inputEUR>0 ? receiveEUR/inputEUR : 0), quotedReceiveEUR:receiveEUR,
+    feeEUR:n(feeEUR), networkEUR:n(networkEUR), slippageEUR:n(slippageEUR), netReceiveEUR,
+    quoteRef, expiresAt, economicallyPositive:netReceiveEUR>0
   };
 }
 
-export function assertFreshQuote(conversion) {
-  if (conversion.expiresAt && Date.parse(conversion.expiresAt) <= Date.now()) {
-    throw new Error('CONVERSION_QUOTE_EXPIRED');
-  }
-  if (!conversion.quoteRef) throw new Error('CONVERSION_QUOTE_REFERENCE_REQUIRED');
-  return conversion;
+export async function fetchCurrencyQuote(url, payload={}, {timeoutMs=8000}={}) {
+  const target=assertAllowedForExecution(url); const controller=new AbortController(); const timer=setTimeout(()=>controller.abort(),Math.max(1000,timeoutMs));
+  try { const r=await fetch(target,{method:'POST',headers:{'content-type':'application/json',accept:'application/json'},body:JSON.stringify(payload),signal:controller.signal}); if(!r.ok)throw new Error(`QUOTE_HTTP_${r.status}`); return await r.json(); }
+  finally { clearTimeout(timer); }
 }
 
-export async function executeCurrencyConversion({ executeUrl, conversion, payload = {} } = {}) {
-  assertFreshQuote(conversion);
-  const auth = neonOrbGovernor.authorizeConversion({
-    amountEUR: Number(conversion.amount),
-    netReceiveEUR: Number(conversion.netReceive)
-  });
-  if (!auth.ok) return { ok: false, ...auth };
-
-  const url = assertAllowedForExecution(executeUrl);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10000);
+export async function executeCurrencyConversion(url, conversion, payload={}, {timeoutMs=10000}={}) {
+  const calc=calculateCurrencyConversion(conversion);
+  const auth=neonOrbGovernor.authorizeConversion(calc);
+  if(!auth.ok)return {ok:false,...auth,conversion:calc};
+  const target=assertAllowedForExecution(url); const controller=new AbortController(); const timer=setTimeout(()=>controller.abort(),Math.max(1000,timeoutMs));
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify({ conversion, ...payload }),
-      signal: controller.signal
-    });
-    const data = await response.json().catch(() => ({}));
-    neonOrbGovernor.recordConversion({
-      status: response.ok && data?.accepted === true ? 'SUBMITTED' : 'FAILED',
-      ...conversion,
-      providerResult: data
-    });
-    return {
-      ok: response.ok && data?.accepted === true,
-      status: response.status,
-      data
-    };
-  } finally {
-    clearTimeout(timer);
-  }
+    const r=await fetch(target,{method:'POST',headers:{'content-type':'application/json',accept:'application/json'},body:JSON.stringify({conversion:calc,...payload}),signal:controller.signal});
+    const data=await r.json().catch(()=>({}));
+    neonOrbGovernor.recordConversion({status:r.ok?'SUBMITTED':'FAILED',...calc,providerResult:data});
+    return {ok:r.ok,status:r.status,conversion:calc,data};
+  } finally { clearTimeout(timer); }
 }

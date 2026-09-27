@@ -1,45 +1,53 @@
+import crypto from 'node:crypto';
 import { assertAllowedForExecution } from './provider-security.js';
 
-const timeout = ms => Math.max(1000, Number(ms) || 8000);
+const sha256 = value => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
+const text = value => String(value ?? '').trim();
 
-export async function verifyRealWork(opportunity, { timeoutMs = 8000 } = {}) {
-  if (!opportunity?.id) return { verified: false, code: 'OPPORTUNITY_ID_REQUIRED' };
-  const url = opportunity.verificationUrl;
-  if (!url) return { verified: false, code: 'REAL_WORK_VERIFICATION_ENDPOINT_REQUIRED' };
+export function buildVerificationRequest(opportunity = {}) {
+  const workRef = text(opportunity.workRef || opportunity.metadata?.workRef);
+  const deliverableRef = text(opportunity.deliverableRef || opportunity.metadata?.deliverableRef);
+  const settlementProvider = text(opportunity.settlementProvider || opportunity.authorizedProvider);
+  const digest = sha256({
+    opportunityId: text(opportunity.id),
+    workRef,
+    deliverableRef,
+    settlementProvider,
+    revenueEUR: Number(opportunity.revenueEUR || 0)
+  });
+  return { opportunityId: text(opportunity.id), workRef, deliverableRef, settlementProvider, digest };
+}
 
-  const target = assertAllowedForExecution(url);
+export async function verifyRealWork(opportunity = {}, { timeoutMs = 8000 } = {}) {
+  const verificationUrl = text(opportunity.verificationUrl);
+  if (!verificationUrl) return { verified: false, code: 'REAL_WORK_VERIFICATION_URL_REQUIRED' };
+  const request = buildVerificationRequest(opportunity);
+  if (!request.workRef || !request.deliverableRef || !request.settlementProvider) {
+    return { verified: false, code: 'REAL_WORK_REFERENCES_REQUIRED' };
+  }
+
+  const url = assertAllowedForExecution(verificationUrl);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout(timeoutMs));
+  const timer = setTimeout(() => controller.abort(), Math.max(1000, timeoutMs));
   try {
-    const response = await fetch(target, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify({
-        opportunityId: opportunity.id,
-        workRef: opportunity.workRef ?? null,
-        deliverableRef: opportunity.deliverableRef ?? null,
-        source: opportunity.source ?? null
-      }),
+      body: JSON.stringify(request),
       signal: controller.signal
     });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) return { verified: false, code: `VERIFIER_HTTP_${response.status}`, data };
-    const verified = data.verified === true
-      && String(data.opportunityId ?? opportunity.id) === String(opportunity.id)
-      && Boolean(data.workRef)
-      && Boolean(data.deliverableRef)
-      && Boolean(data.provider);
+    const attestation = await response.json().catch(() => ({}));
+    const verified = response.ok && attestation.verified === true &&
+      text(attestation.opportunityId) === request.opportunityId &&
+      text(attestation.workRef) === request.workRef &&
+      text(attestation.deliverableRef) === request.deliverableRef &&
+      text(attestation.settlementProvider) === request.settlementProvider;
     return {
       verified,
-      code: verified ? 'REAL_WORK_VERIFIED' : 'REAL_WORK_ATTESTATION_INCOMPLETE',
-      workRef: data.workRef ?? null,
-      deliverableRef: data.deliverableRef ?? null,
-      provider: data.provider ?? null,
-      providerRef: data.providerRef ?? null,
-      verifiedAt: data.verifiedAt ?? new Date().toISOString(),
-      data
+      code: verified ? 'REAL_WORK_VERIFIED' : 'REAL_WORK_ATTESTATION_REJECTED',
+      verificationUrl,
+      requestDigest: request.digest,
+      attestation
     };
-  } finally {
-    clearTimeout(timer);
-  }
+  } finally { clearTimeout(timer); }
 }

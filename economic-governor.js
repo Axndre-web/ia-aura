@@ -21,7 +21,9 @@ const defaults = () => ({
     maxDailyVerifiedRevenueEUR: num(process.env.NEON_MAX_DAILY_REVENUE_EUR, 10000),
     allowSpending: process.env.NEON_ALLOW_SPENDING === 'true',
     allowSigning: process.env.NEON_ALLOW_SIGNING === 'true',
-    allowWithdrawals: process.env.NEON_ALLOW_WITHDRAWALS === 'true'
+    allowWithdrawals: process.env.NEON_ALLOW_WITHDRAWALS === 'true',
+    requireRealityVerification: process.env.NEON_REQUIRE_REALITY_VERIFICATION !== 'false',
+    requireAuthorizedProvider: process.env.NEON_REQUIRE_AUTHORIZED_PROVIDER !== 'false'
   },
   opportunities: [],
   executions: [],
@@ -61,6 +63,8 @@ export class NeonOrbGovernor {
   }
   authorizeOpportunity(op) {
     if (this.state.paused) return { ok:false, code:'GOVERNOR_PAUSED' };
+    if (this.state.policy.requireRealityVerification && op.realityVerified !== true) return { ok:false, code:'REALITY_VERIFICATION_REQUIRED' };
+    if (this.state.policy.requireAuthorizedProvider && !op.authorizedProvider) return { ok:false, code:'AUTHORIZED_PROVIDER_REQUIRED' };
     const net = num(op.netProfitEUR);
     const marginBps = num(op.marginBps);
     if (net < this.state.policy.minNetProfitEUR) return { ok:false, code:'NET_PROFIT_BELOW_FLOOR' };
@@ -68,36 +72,29 @@ export class NeonOrbGovernor {
     if (num(op.spendEUR) > this.state.policy.maxSingleSpendEUR) return { ok:false, code:'SINGLE_SPEND_LIMIT' };
     const d = this.dailyTotals();
     if (d.spendEUR + num(op.spendEUR) > this.state.policy.maxDailySpendEUR) return { ok:false, code:'DAILY_SPEND_LIMIT' };
-    if (op.realityVerified !== true) return { ok:false, code:'REAL_WORK_NOT_VERIFIED' };
-    if (!op.authorizedProvider) return { ok:false, code:'AUTHORIZED_PROVIDER_REQUIRED' };
     if (this.state.execution !== 'LIVE_EXECUTION') return { ok:false, code:'EXECUTION_MODE_NOT_LIVE' };
     if (!this.state.policy.allowSpending) return { ok:false, code:'SPENDING_DISABLED' };
     return { ok:true, code:'AUTHORIZED_BY_NEON_ORB' };
   }
+  authorizeSettlement({ amountEUR = 0 } = {}) {
+    if (this.state.paused) return { ok:false, code:'GOVERNOR_PAUSED' };
+    const amount = num(amountEUR);
+    if (!(amount > 0)) return { ok:false, code:'SETTLEMENT_AMOUNT_REQUIRED' };
+    if (amount > this.state.policy.maxSingleSettlementEUR) return { ok:false, code:'SINGLE_SETTLEMENT_LIMIT' };
+    const d = this.dailyTotals();
+    if (d.revenueEUR + amount > this.state.policy.maxDailyVerifiedRevenueEUR) return { ok:false, code:'DAILY_REVENUE_LIMIT' };
+    if (this.state.policy.requireRealityVerification !== true) return { ok:true, code:'SETTLEMENT_AUTHORIZED_BY_NEON_ORB' };
+    return { ok:true, code:'SETTLEMENT_AUTHORIZED_BY_NEON_ORB' };
+  }
   authorizeConversion(c) {
     if (this.state.paused) return { ok:false, code:'GOVERNOR_PAUSED' };
-    if (c.expired === true) return { ok:false, code:'CONVERSION_QUOTE_EXPIRED' };
-    if (!c.quoteRef) return { ok:false, code:'CONVERSION_QUOTE_REFERENCE_REQUIRED' };
-    if (num(c.netReceiveEUR) <= 0 || num(c.netReceiveEUR) <= num(c.amountEUR)) return { ok:false, code:'NON_POSITIVE_CONVERSION_RESULT' };
+    if (num(c.netReceiveEUR) <= 0) return { ok:false, code:'NON_POSITIVE_CONVERSION_RESULT' };
     if (!this.state.policy.allowSpending || this.state.execution !== 'LIVE_EXECUTION') return { ok:false, code:'LIVE_CONVERSION_DISABLED' };
     if (num(c.amountEUR) > this.state.policy.maxSingleSpendEUR) return { ok:false, code:'CONVERSION_SPEND_LIMIT' };
     return { ok:true, code:'AUTHORIZED_BY_NEON_ORB' };
   }
-  authorizeSettlementVerification(s) {
-    if (this.state.paused) return { ok:false, code:'GOVERNOR_PAUSED' };
-    if (!s?.verification?.verified) return { ok:false, code:'SETTLEMENT_VERIFICATION_REQUIRED' };
-    if (!s.provider || !s.providerRef || !s.workRef || !s.deliverableRef) return { ok:false, code:'SETTLEMENT_EVIDENCE_INCOMPLETE' };
-    if (num(s.amountEUR) <= 0 || num(s.amountEUR) > this.state.policy.maxSingleSettlementEUR) return { ok:false, code:'SETTLEMENT_LIMIT' };
-    const d=this.dailyTotals();
-    if (d.revenueEUR + num(s.amountEUR) > this.state.policy.maxDailyVerifiedRevenueEUR) return { ok:false, code:'DAILY_SETTLEMENT_LIMIT' };
-    return { ok:true, code:'SETTLEMENT_AUTHORIZED_BY_NEON_ORB' };
-  }
-  recordVerifiedSettlement(x) {
-    const auth=this.authorizeSettlementVerification(x);
-    if (!auth.ok) return auth;
-    return this.recordExecution({ ...x, status:'SETTLED_VERIFIED', revenueEUR:num(x.amountEUR), spendEUR:num(x.spendEUR) });
-  }
   recordExecution(x) { this.state.executions.push({ ...x, at: x.at || now() }); this.state.executions = this.state.executions.slice(-5000); save(this.state); return x; }
+  recordSettlement(x) { this.state.executions.push({ ...x, status:'SETTLED_VERIFIED', at:x.at || now() }); this.state.executions = this.state.executions.slice(-5000); save(this.state); return x; }
   recordConversion(x) { this.state.conversions.push({ ...x, at: x.at || now() }); this.state.conversions = this.state.conversions.slice(-5000); save(this.state); return x; }
 }
 

@@ -25,7 +25,7 @@ app.get("/healthz", (_req, res) => {
   res.status(200).json({
     status: "ok",
     service: "neon-player-x",
-    version: "11.8.0"
+    version: "11.8.1"
   });
 });
 
@@ -38,6 +38,10 @@ import { calculateCurrencyConversion, fetchCurrencyQuote, executeCurrencyConvers
 import { calculateConversion, fetchConversionQuote, executeConversion } from './server/asset-router.js';
 import { listEconomicSources, verifySourceEvidence } from './server/economic-source-registry.js';
 import { fetchSourceEvidence } from './server/external-source-adapter.js';
+import { economicCapabilitiesStatus, listEconomicCapabilities, observeEconomicSource } from './server/economic-capabilities.js';
+import { startAutonomySupervisor, snapshot as autonomySnapshot, runAutonomyCheck } from './server/autonomy-supervisor.js';
+import { startLifeAgent, snapshot as lifeAgentSnapshot, lifeAgentTick } from './server/neon-life-agent.js';
+import { walletReadiness } from './server/wallet-vault.js';
 
 function adminRequired(req, res, next) {
   const expected = process.env.NEON_ADMIN_TOKEN;
@@ -47,7 +51,34 @@ function adminRequired(req, res, next) {
 }
 
 app.get('/api/economy/status', (_req,res)=>res.json({ok:true,...neonOrbGovernor.snapshot(), economicSources:listEconomicSources()}));
+app.get('/api/bridge/:resource', async (req, res) => {
+  const allowed = new Set(['health','wallet','telemetry','work','receipts']);
+  const resource = String(req.params.resource || '');
+  if (!allowed.has(resource)) return res.status(404).json({ ok:false, error:'bridge_resource_not_found' });
+  const base = String(process.env.NEON_BRIDGE_URL || 'http://127.0.0.1:8765').replace(/\/$/, '');
+  const token = String(process.env.NEON_BRIDGE_TOKEN || '');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
+  try {
+    const headers = { Accept: 'application/json' };
+    if (token) headers['X-Neon-Bridge-Token'] = token;
+    const upstream = await fetch(`${base}/${resource}`, { method:'GET', headers, cache:'no-store', signal:controller.signal });
+    const text = await upstream.text();
+    let payload;
+    try { payload = JSON.parse(text); } catch { payload = { ok:false, error:'bridge_invalid_json' }; }
+    res.status(upstream.status).set('Cache-Control','no-store').json(payload);
+  } catch (error) {
+    res.status(error?.name === 'AbortError' ? 504 : 502).json({ ok:false, error:'bridge_unavailable', detail:error?.name === 'AbortError' ? 'timeout' : String(error?.message || error) });
+  } finally { clearTimeout(timer); }
+});
+app.get('/api/autonomy/status', (_req,res)=>res.json({ok:true,...autonomySnapshot()}));
+app.get('/api/life/status', async (_req,res)=>res.json({ok:true,...lifeAgentSnapshot(),wallet:await walletReadiness()}));
+app.post('/api/life/tick', adminRequired, async (_req,res)=>{ const result=await lifeAgentTick(); res.status(result.ok?200:502).json(result); });
+app.post('/api/autonomy/check', adminRequired, async (_req,res)=>{ const result=await runAutonomyCheck({discover:true}); res.status(result.ok?200:502).json(result); });
 app.get('/api/economy/sources', (_req,res)=>res.json({ok:true,sources:listEconomicSources()}));
+app.get('/api/economy/capabilities', (_req,res)=>res.json(economicCapabilitiesStatus()));
+app.get('/api/economy/capabilities/catalog', (_req,res)=>res.json({ok:true,capabilities:listEconomicCapabilities()}));
+app.post('/api/economy/capabilities/:sourceId/observe', adminRequired, async (req,res)=>{ try { const result=await observeEconomicSource({sourceId:req.params.sourceId,payload:req.body?.payload||{},timeoutMs:req.body?.timeoutMs}); res.status(result.verification.verified?200:422).json({ok:result.verification.verified,...result}); } catch(error) { res.status(502).json({ok:false,error:String(error?.message||error)}); } });
 app.post('/api/economy/sources/verify', adminRequired, (req,res)=>{
   try {
     const result=verifySourceEvidence({sourceId:req.body?.sourceId,evidence:req.body?.evidence||{}});
@@ -73,6 +104,80 @@ app.post('/api/economy/conversion/execute', adminRequired, async (req,res)=>{ tr
 app.post('/api/economy/currency/quote', adminRequired, async (req,res)=>{ try { const body=req.body||{}; const quote=body.quoteUrl ? await fetchCurrencyQuote(body.quoteUrl,body.payload||{}) : body.quote; if(!quote)return res.status(400).json({ok:false,error:'quote_required'}); res.json({ok:true,conversion:calculateCurrencyConversion({...body,...quote}),quote}); } catch(error){ res.status(502).json({ok:false,error:String(error?.message||error)}); } });
 app.post('/api/economy/currency/execute', adminRequired, async (req,res)=>{ try { const body=req.body||{}; const result=await executeCurrencyConversion(body.executeUrl,body,body.payload||{}); res.status(result.ok?200:409).json(result); } catch(error){ res.status(502).json({ok:false,error:String(error?.message||error)}); } });
 
+
+// LIVE RADIO: same-origin, allowlisted streaming proxy.
+// The browser never receives arbitrary upstream URLs, preventing an open SSRF proxy.
+const RADIO_UPSTREAMS = Object.freeze([
+  "https://playerservices.streamtheworld.com/api/livestream-redirect/Los40.mp3",
+  "https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_CLASSIC.mp3",
+  "https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_DANCE.mp3",
+  "https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_URBAN.mp3",
+  "https://one.cloudstreaming.eu/proxy/europa/stream",
+  "https://kissfm.kissfmradio.cires21.com/kissfm.mp3",
+  "https://playerservices.streamtheworld.com/api/livestream-redirect/RADIOLE.mp3",
+  "https://rockfm-cope-rrcast.flumotion.com/cope/rockfm-low.mp3",
+  "https://playerservices.streamtheworld.com/api/livestream-redirect/RADIOMARCA_NACIONAL.mp3",
+  "https://flucast09-h-cloud.flumotion.com/cope/net1.mp3",
+  "https://playerservices.streamtheworld.com/api/livestream-redirect/RAC_1.mp3",
+  "https://dispatcher.rndfnk.com/crtve/rne1/mad/mp3/high"
+]);
+
+app.get("/api/radio/stream/:id", async (req, res) => {
+  const id = Number.parseInt(req.params.id, 10);
+  const upstream = Number.isInteger(id) && id >= 0 && id < RADIO_UPSTREAMS.length ? RADIO_UPSTREAMS[id] : null;
+  if (!upstream) return res.status(404).json({ ok: false, error: "radio_station_not_found" });
+
+  const controller = new AbortController();
+  const abortUpstream = () => controller.abort();
+  res.on("close", abortUpstream);
+
+  try {
+    const upstreamResponse = await fetch(upstream, {
+      method: "GET",
+      redirect: "follow",
+      cache: "no-store",
+      signal: controller.signal,
+      headers: {
+        "Accept": "audio/mpeg,audio/aac,audio/*;q=0.9,*/*;q=0.1",
+        "User-Agent": "NEON-ORB-Radio/11.8"
+      }
+    });
+
+    if (!upstreamResponse.ok || !upstreamResponse.body) {
+      return res.status(upstreamResponse.status || 502).json({
+        ok: false,
+        error: "radio_upstream_unavailable",
+        upstreamStatus: upstreamResponse.status || 0
+      });
+    }
+
+    res.status(200);
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Type", upstreamResponse.headers.get("content-type") || "audio/mpeg");
+    const length = upstreamResponse.headers.get("content-length");
+    if (length) res.setHeader("Content-Length", length);
+
+    for await (const chunk of upstreamResponse.body) {
+      if (res.destroyed) break;
+      res.write(chunk);
+    }
+    if (!res.destroyed) res.end();
+  } catch (error) {
+    if (!res.headersSent) {
+      res.status(error?.name === "AbortError" ? 499 : 502).json({
+        ok: false,
+        error: error?.name === "AbortError" ? "radio_client_closed" : "radio_upstream_error"
+      });
+    } else if (!res.destroyed) {
+      res.end();
+    }
+  } finally {
+    res.off("close", abortUpstream);
+  }
+});
+
 app.use(express.static(publicDir, {
   index: "index.html",
   extensions: ["html"],
@@ -97,6 +202,8 @@ app.use((err, _req, res, _next) => {
 
 const server = app.listen(PORT, HOST, () => {
   console.log(`NEON PLAYER X listening on http://${HOST}:${PORT}`);
+  startAutonomySupervisor();
+startLifeAgent();
 });
 
 function shutdown(signal) {

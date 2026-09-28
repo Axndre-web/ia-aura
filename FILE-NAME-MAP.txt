@@ -1,0 +1,40 @@
+NEON ORB — MAPA DE ARCHIVOS PARA CAMBIOS EXTERNOS
+
+OBJETIVO: evitar editar la lógica interna para cambios de despliegue.
+
+1. IDENTIDAD / VALORES EXTERNOS
+   -> .env.example  (copiar a .env en el servidor)
+   -> NEON_SOLANA_PUBLIC_ADDRESS
+   -> NEON_UPWORK_ACCESS_TOKEN
+   -> NEON_SECRET_RUNPOD_API_KEY
+
+2. SERVIDOR
+   -> server.js
+   No renombrar si no se actualiza package.json.
+
+3. FRONTEND
+   -> public/index.html
+   -> public/script.js
+   -> public/style.css
+   Se puede sustituir la presentación sin modificar el motor económico.
+
+4. MOTOR
+   -> core/
+   -> server/
+   No tocar para cambios normales de identidad o credenciales.
+
+5. RADIO
+   -> /api/radio/stream/:id
+   La radio se mantiene detrás del servidor para evitar problemas de CORS.
+
+6. SI UN ALOJAMIENTO EXIGE OTRO NOMBRE
+   Cambia solamente el nombre del archivo de entrada y su referencia en package.json, o crea un alias.
+   No elimines las dos últimas letras de nombres de módulos arbitrariamente: algunos nombres son referencias de importación y romperían el sistema.
+
+7. SEGURIDAD
+   Nunca colocar aquí:
+   - contraseñas;
+   - seed phrases;
+   - claves privadas;
+   - cookies de sesión;
+   - tokens OAuth reales.

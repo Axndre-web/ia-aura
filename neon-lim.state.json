@@ -1,7 +1,7 @@
 {
   "version": "11.7.1",
   "startedAt": 1790155850.1206267,
-  "cycles": 19112,
+  "cycles": 19184,
   "decision": "OBSERVE_NETWORK",
   "zone": "LOCAL-BRIDGE",
   "energy": 82,
@@ -13,7 +13,7 @@
     "CREDITS": 0,
     "BITS": 0
   },
-  "lastTick": 1790629284.3363435,
+  "lastTick": 1790629670.5347447,
   "network": {
     "solana": {
       "address": "AvcMD59dTTTnHKzfdQtF9AcSzgSNcqCWEkcUYx4BnUeh",
@@ -21,7 +21,7 @@
       "status": "observed",
       "lamports": 0,
       "sol": 0.0,
-      "observedAt": 1790629273.7554083
+      "observedAt": 1790629660.3998785
     },
     "bitcoin": {
       "address": "bc1qs9dvc02xl8ury20xlsya8xda4cpygzhs0ll9ym",
@@ -29,7 +29,7 @@
       "status": "observed",
       "satoshis": 0,
       "btc": 0.0,
-      "observedAt": 1790629274.3201542
+      "observedAt": 1790629660.5252006
     }
   },
   "work": {
@@ -38,5 +38,5 @@
     "source": "local-bridge"
   },
   "receipts": [],
-  "lastNetworkRefresh": 1790629274.3201542
+  "lastNetworkRefresh": 1790629660.5252006
 }

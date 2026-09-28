@@ -16,6 +16,13 @@ async function fetchJson(path, timeout = 3500) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
   try {
+    try {
+      const local = await fetch(`/api/bridge${path}`, { signal: controller.signal, cache: 'no-store' });
+      if (local.ok) return await local.json();
+      if (local.status !== 404) throw new Error(`HTTP ${local.status}`);
+    } catch (error) {
+      if (error?.name === 'AbortError') throw error;
+    }
     const response = await fetch(`${BRIDGE_URL}${path}`, { signal: controller.signal, cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
@@ -38,11 +45,11 @@ export function mountWalletDashboard(root, ledger = unifiedLedger) {
     root.innerHTML = `<section class="neon-wallet" aria-label="Dashboard de billetera NEON ORB">
       <header class="wallet-head">
         <div><span class="wallet-kicker">NEON ORB · TESORERÍA</span><h2>${PUBLIC_IDENTITY}</h2><small>Identidad pública · estado observable · sin claves privadas en frontend</small></div>
-        <span class="wallet-live ${remote.connected ? 'is-live' : ''}"><i></i>${bridgeLabel}</span>
+        <div class="wallet-head-actions"><button class="wallet-action" id="neonWalletRefresh" type="button">↻ ACTUALIZAR</button><span class="wallet-live ${remote.connected ? 'is-live' : ''}"><i></i>${bridgeLabel}</span></div>
       </header>
       <div class="wallet-identity-grid">
-        <div class="wallet-address"><small>SOLANA · PUBLIC ADDRESS</small><strong title="${esc(PUBLIC_ADDRESSES.solana)}">${esc(short(remote.wallet?.addresses?.solana || PUBLIC_ADDRESSES.solana))}</strong><span>${solValue}</span></div>
-        <div class="wallet-address"><small>BITCOIN · PUBLIC ADDRESS</small><strong title="${esc(PUBLIC_ADDRESSES.bitcoin)}">${esc(short(remote.wallet?.addresses?.bitcoin || PUBLIC_ADDRESSES.bitcoin))}</strong><span>${btcValue}</span></div>
+        <div class="wallet-address"><small>SOLANA · PUBLIC ADDRESS</small><strong title="${esc(PUBLIC_ADDRESSES.solana)}">${esc(short(remote.wallet?.addresses?.solana || PUBLIC_ADDRESSES.solana))}</strong><span>${solValue}</span><div class="wallet-mini-actions"><button type="button" data-copy-wallet="solana">COPIAR</button><a href="https://solscan.io/account/${encodeURIComponent(remote.wallet?.addresses?.solana || PUBLIC_ADDRESSES.solana)}" target="_blank" rel="noopener">EXPLORAR ↗</a></div></div>
+        <div class="wallet-address"><small>BITCOIN · PUBLIC ADDRESS</small><strong title="${esc(PUBLIC_ADDRESSES.bitcoin)}">${esc(short(remote.wallet?.addresses?.bitcoin || PUBLIC_ADDRESSES.bitcoin))}</strong><span>${btcValue}</span><div class="wallet-mini-actions"><button type="button" data-copy-wallet="bitcoin">COPIAR</button><a href="https://mempool.space/address/${encodeURIComponent(remote.wallet?.addresses?.bitcoin || PUBLIC_ADDRESSES.bitcoin)}" target="_blank" rel="noopener">EXPLORAR ↗</a></div></div>
         <div class="wallet-health"><small>SALUD DEL PUENTE</small><strong>${remote.health?.ok ? 'HEALTHY' : 'OBSERVABLE'}</strong><span>${remote.health?.service || 'LOCAL LEDGER'}</span></div>
       </div>
       <div class="neon-balances">
@@ -53,8 +60,15 @@ export function mountWalletDashboard(root, ledger = unifiedLedger) {
         <div><small>EUR · VERIFIED LEDGER</small><strong>€${Number(state.external.fiatEuroBalance).toFixed(2)}</strong></div>
       </div>
       <div class="wallet-source-note">COMPUTABLE ≠ EXTERNO · Los balances de red solo se muestran como observados cuando el bridge obtiene datos reales. Un estado pendiente nunca se presenta como liquidado.</div>
+      <div class="wallet-operational"><span>CANAL</span><strong>${remote.connected ? 'PUENTE CONECTADO' : 'MODO LOCAL'}</strong><small>${remote.telemetry?.telemetry?.lastNetworkRefresh ? `Última sincronización: ${new Date(remote.telemetry.telemetry.lastNetworkRefresh * 1000).toLocaleString()}` : 'Sin sincronización de red disponible'}</small></div>
       <div class="neon-history"><table><thead><tr><th>Fecha</th><th>Origen</th><th>Divisa</th><th>Importe</th><th>Estado</th><th>ID</th></tr></thead><tbody>${rows || '<tr><td colspan="6">Sin movimientos</td></tr>'}</tbody></table></div>
     </section>`;
+    root.querySelector('#neonWalletRefresh')?.addEventListener('click', refresh);
+    root.querySelectorAll('[data-copy-wallet]').forEach(button => button.addEventListener('click', async () => {
+      const key = button.dataset.copyWallet;
+      const address = key === 'solana' ? (remote.wallet?.addresses?.solana || PUBLIC_ADDRESSES.solana) : (remote.wallet?.addresses?.bitcoin || PUBLIC_ADDRESSES.bitcoin);
+      try { await navigator.clipboard.writeText(address); button.textContent = 'COPIADO ✓'; setTimeout(() => { button.textContent = 'COPIAR'; }, 1400); } catch { button.textContent = 'COPIA MANUAL'; }
+    }));
   };
 
   const refresh = async () => {

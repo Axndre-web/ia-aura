@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "mode": "SERVER_VERIFIED_REPORTING",
+  "inventory": [],
+  "authorizedSellers": [],
+  "note": "Configure real SSP/DSP reporting on the server. This public file contains no credentials and does not assert revenue."
+}

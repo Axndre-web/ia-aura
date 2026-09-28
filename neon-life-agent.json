@@ -1,0 +1,17 @@
+{
+  "version": "11.8.1",
+  "mode": "LIFE_AGENT",
+  "running": false,
+  "startedAt": null,
+  "lastTickAt": "2026-09-28T17:06:14.858Z",
+  "lastDiscovery": {
+    "at": "2026-09-28T17:06:14.859Z",
+    "discovered": 0,
+    "errors": 0
+  },
+  "lastExecution": null,
+  "lastSettlement": null,
+  "executed": 0,
+  "settled": 0,
+  "errors": []
+}

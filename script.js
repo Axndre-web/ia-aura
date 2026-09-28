@@ -25,18 +25,18 @@ function applyTheme(name){document.body.dataset.theme=name;localStorage.neonThem
 function updateThemeButton(){const b=$('#themeCycle');if(!b)return;const i=Math.max(0,themes.findIndex(t=>t[0]===document.body.dataset.theme));b.dataset.themeIndex=i;b.querySelector('span').textContent=themes[i]?.[1]||'TEMA'}
 function cycleTheme(){const i=Math.max(0,themes.findIndex(t=>t[0]===document.body.dataset.theme));applyTheme(themes[(i+1)%themes.length][0])}
 const streamCandidates={
-  0:['https://playerservices.streamtheworld.com/api/livestream-redirect/Los40.mp3'],
-  1:['https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_CLASSIC.mp3'],
-  2:['https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_DANCE.mp3'],
-  3:['https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_URBAN.mp3'],
-  4:['https://one.cloudstreaming.eu/proxy/europa/stream'],
-  5:['https://kissfm.kissfmradio.cires21.com/kissfm.mp3'],
-  6:['https://playerservices.streamtheworld.com/api/livestream-redirect/RADIOLE.mp3'],
-  7:['https://rockfm-cope-rrcast.flumotion.com/cope/rockfm-low.mp3'],
-  8:['https://playerservices.streamtheworld.com/api/livestream-redirect/RADIOMARCA_NACIONAL.mp3'],
-  9:['https://flucast09-h-cloud.flumotion.com/cope/net1.mp3'],
-  10:['https://playerservices.streamtheworld.com/api/livestream-redirect/RAC_1.mp3'],
-  11:['https://dispatcher.rndfnk.com/crtve/rne1/mad/mp3/high']
+  0:['/api/radio/stream/0','https://playerservices.streamtheworld.com/api/livestream-redirect/Los40.mp3'],
+  1:['/api/radio/stream/1','https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_CLASSIC.mp3'],
+  2:['/api/radio/stream/2','https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_DANCE.mp3'],
+  3:['/api/radio/stream/3','https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_URBAN.mp3'],
+  4:['/api/radio/stream/4','https://one.cloudstreaming.eu/proxy/europa/stream'],
+  5:['/api/radio/stream/5','https://kissfm.kissfmradio.cires21.com/kissfm.mp3'],
+  6:['/api/radio/stream/6','https://playerservices.streamtheworld.com/api/livestream-redirect/RADIOLE.mp3'],
+  7:['/api/radio/stream/7','https://rockfm-cope-rrcast.flumotion.com/cope/rockfm-low.mp3'],
+  8:['/api/radio/stream/8','https://playerservices.streamtheworld.com/api/livestream-redirect/RADIOMARCA_NACIONAL.mp3'],
+  9:['/api/radio/stream/9','https://flucast09-h-cloud.flumotion.com/cope/net1.mp3'],
+  10:['/api/radio/stream/10','https://playerservices.streamtheworld.com/api/livestream-redirect/RAC_1.mp3'],
+  11:['/api/radio/stream/11','https://dispatcher.rndfnk.com/crtve/rne1/mad/mp3/high']
 };
 let radioRetryTimer=null,radioRequest=0,radioFailCount=0,radioFilter='all',radioOnlineRetry=null;
 const radioCategories=['pop','classic','dance','urban','pop','rock','pop','rock','sport','sport','sport','general'];
@@ -67,6 +67,25 @@ async function discoverRadioStream(i){
   }catch(e){}
   return null;
 }
+function waitForRadioStart(timeout=10000){
+  if(!audio)return Promise.reject(new Error('audio_missing'));
+  if(!audio.paused&&!audio.error&&audio.readyState>=2)return Promise.resolve();
+  return new Promise((resolve,reject)=>{
+    let settled=false;
+    const finish=(ok,error)=>{
+      if(settled)return;settled=true;clearTimeout(timer);
+      audio.removeEventListener('playing',onPlaying);audio.removeEventListener('error',onError);audio.removeEventListener('stalled',onStalled);
+      ok?resolve():reject(error||new Error('radio_start_failed'));
+    };
+    const onPlaying=()=>finish(true);
+    const onError=()=>finish(false,new Error('radio_media_error'));
+    const onStalled=()=>{};
+    const timer=setTimeout(()=>finish(false,new Error('radio_start_timeout')),timeout);
+    audio.addEventListener('playing',onPlaying,{once:true});
+    audio.addEventListener('error',onError,{once:true});
+    audio.addEventListener('stalled',onStalled);
+  });
+}
 async function playStation(i,attempt=0){
   if(!stations[i]||!audio)return;
   active=i;const req=++radioRequest,r=stations[i];radioFailCount=attempt;
@@ -81,7 +100,7 @@ async function playStation(i,attempt=0){
   if(!candidates.length){setRadioStatus('SIN STREAM','error');toast(r[0]+' · no hay señal directa disponible ahora.');refreshStationStates();return}
   const url=candidates[attempt%candidates.length];audio.src=url;audio.load();
   try{
-    await Promise.race([audio.play(),new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),9000))]);
+    const playPromise=audio.play();if(playPromise?.catch)await playPromise;await waitForRadioStart(10000);
     if(req!==radioRequest)return;radioFailCount=0;setRadioStatus('EN DIRECTO','live');const hint=$('#radioGridHint');if(hint)hint.textContent=`${r[0]} · señal activa`;toast(r[0]+' · reproduciendo');refreshStationStates();
   }catch(e){
     if(req!==radioRequest)return;radioFailCount=attempt+1;setRadioStatus('RECUPERANDO','loading');refreshStationStates();
@@ -152,9 +171,9 @@ bindMainEvents();renderMainQueue();
  let rAC=null,rAnalyser=null,rSource=null,sAC=null,sAnalyser=null,sSource=null;
  let studioBands=[0,0,0], studioPreamp=1, studioGlow=1, eqBands=[0,0,0,0,0];
  function fit(c,ctx){if(!c||!ctx)return;const d=Math.max(1,devicePixelRatio||1),w=c.clientWidth,h=c.clientHeight;c.width=w*d;c.height=h*d;ctx.setTransform(d,0,0,d,0,0);return [w,h]}
- function analyserFor(el,type){if(!el)return null;try{let ac=type==='radio'?rAC:sAC;if(!ac){ac=new (window.AudioContext||window.webkitAudioContext)();if(type==='radio')rAC=ac;else sAC=ac}let an=type==='radio'?rAnalyser:sAnalyser;let source=type==='radio'?rSource:sSource;if(!an){an=ac.createAnalyser();an.fftSize=128;an.smoothingTimeConstant=.82;source=ac.createMediaElementSource(el);const bands=type==='radio'?[60,230,910,3600,14000]:[140,1000,7000];const filters=bands.map((freq,idx)=>{const f=ac.createBiquadFilter();f.type=idx===0?'lowshelf':idx===bands.length-1?'highshelf':'peaking';f.frequency.value=freq;f.Q.value=(idx===0||idx===bands.length-1)?0.7:1.05;f.gain.value=0;return f});source.connect(filters[0]);for(let i=0;i<filters.length-1;i++)filters[i].connect(filters[i+1]);filters[filters.length-1].connect(an);an.connect(ac.destination);if(type==='radio'){rAnalyser=an;rSource=source;window.__neonRadioFilters=filters}else{sAnalyser=an;sSource=source;window.__neonStudioFilters=filters}}if(ac.state==='suspended')ac.resume();return an}catch(e){if(type==='radio')window.__neonRadioAudioBlocked=true;return null}}
+  function analyserFor(el,type){if(!el)return null;if(type==='radio')return null;try{let ac=sAC;if(!ac){ac=new (window.AudioContext||window.webkitAudioContext)();sAC=ac}let an=sAnalyser,source=sSource;if(!an){an=ac.createAnalyser();an.fftSize=128;an.smoothingTimeConstant=.82;source=ac.createMediaElementSource(el);const bands=[140,1000,7000];const filters=bands.map((freq,idx)=>{const f=ac.createBiquadFilter();f.type=idx===0?'lowshelf':idx===bands.length-1?'highshelf':'peaking';f.frequency.value=freq;f.Q.value=(idx===0||idx===bands.length-1)?0.7:1.05;f.gain.value=0;return f});source.connect(filters[0]);for(let i=0;i<filters.length-1;i++)filters[i].connect(filters[i+1]);filters[filters.length-1].connect(an);an.connect(ac.destination);sAnalyser=an;sSource=source;window.__neonStudioFilters=filters}if(ac.state==='suspended')ac.resume();return an}catch(e){return null}}
  function activeMain(){return mainA&&!mainA.paused&&!mainA.ended?mainA:mainV&&!mainV.paused&&!mainV.ended?mainV:null}
- function drawEQ(){if(!rCtx)return;const [w,h]=fit(rCanvas,rCtx)||[300,190],an=analyserFor(radio,'radio');rCtx.clearRect(0,0,w,h);rCtx.fillStyle='rgba(2,1,7,.45)';rCtx.fillRect(0,0,w,h);let data=new Uint8Array(an?an.frequencyBinCount:64);if(an)an.getByteFrequencyData(data);const n=data.length,bars=Math.min(44,n),bw=w/bars;for(let i=0;i<bars;i++){let v=an?data[Math.floor(i*n/bars)]/255:(.16+.09*Math.sin(performance.now()/240+i));v=Math.max(.04,v);const bh=v*(h-25);const g=rCtx.createLinearGradient(0,h,0,h-bh);g.addColorStop(0,'#8a35ff');g.addColorStop(.55,'#d946ef');g.addColorStop(1,'#65ffb0');rCtx.fillStyle=g;rCtx.shadowBlur=12;rCtx.shadowColor='#a844ff';rCtx.fillRect(i*bw+1,h-bh,bw*.72,bh)}rCtx.shadowBlur=0;requestAnimationFrame(drawEQ)}
+ function drawEQ(){if(!rCtx)return;const [w,h]=fit(rCanvas,rCtx)||[300,190],an=null;rCtx.clearRect(0,0,w,h);rCtx.fillStyle='rgba(2,1,7,.45)';rCtx.fillRect(0,0,w,h);let data=new Uint8Array(an?an.frequencyBinCount:64);if(an)an.getByteFrequencyData(data);const n=data.length,bars=Math.min(44,n),bw=w/bars;for(let i=0;i<bars;i++){let v=an?data[Math.floor(i*n/bars)]/255:(.16+.09*Math.sin(performance.now()/240+i));v=Math.max(.04,v);const bh=v*(h-25);const g=rCtx.createLinearGradient(0,h,0,h-bh);g.addColorStop(0,'#8a35ff');g.addColorStop(.55,'#d946ef');g.addColorStop(1,'#65ffb0');rCtx.fillStyle=g;rCtx.shadowBlur=12;rCtx.shadowColor='#a844ff';rCtx.fillRect(i*bw+1,h-bh,bw*.72,bh)}rCtx.shadowBlur=0;requestAnimationFrame(drawEQ)}
  function drawStudio(){if(!sCtx)return;const [w,h]=fit(sCanvas,sCtx)||[500,190],m=activeMain(),an=m?analyserFor(m,'studio'):null;sCtx.clearRect(0,0,w,h);sCtx.fillStyle='rgba(2,1,7,.5)';sCtx.fillRect(0,0,w,h);let data=new Uint8Array(an?an.fftSize:128);if(an)an.getByteTimeDomainData(data);sCtx.lineWidth=2;sCtx.beginPath();for(let x=0;x<w;x++){let idx=Math.floor(x/w*data.length),v=an?(data[idx]-128)/128:(.03*Math.sin(x/18+performance.now()/330));let y=h/2+v*h*.85*(studioPreamp);x? sCtx.lineTo(x,y):sCtx.moveTo(x,y)}sCtx.strokeStyle='#9f48ff';sCtx.shadowBlur=18;sCtx.shadowColor='#9f48ff';sCtx.stroke();sCtx.shadowBlur=0;for(let i=0;i<24;i++){let x=i*w/24,y=h-15-(Math.abs(Math.sin(i*.8+performance.now()/500))*(20+studioBands[i%3]*2));sCtx.fillStyle=i%3===0?'#65ffb0':'#b64cff';sCtx.globalAlpha=.18; sCtx.fillRect(x,y,3,8)}sCtx.globalAlpha=1;$('#studioState')?.replaceChildren(document.createTextNode(m?'ANALIZANDO':'ESPERA'));requestAnimationFrame(drawStudio)}
  function setupAudio(el,type){if(!el)return;['play','playing'].forEach(ev=>el.addEventListener(ev,()=>{const an=analyserFor(el,type);an?.context.resume?.();if(type==='radio')$('#radioEqState')?.replaceChildren(document.createTextNode('EN DIRECTO'))}));el.addEventListener('pause',()=>{if(type==='radio')$('#radioEqState')?.replaceChildren(document.createTextNode('PAUSA'))});el.addEventListener('error',()=>{if(type==='radio')$('#radioEqState')?.replaceChildren(document.createTextNode('STREAM SIN DATOS'))})}
  setupAudio(radio,'radio');setupAudio(mainA,'studio');setupAudio(mainV,'studio');

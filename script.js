@@ -24,20 +24,7 @@ function renderThemes(){const g=$('#themeGrid');if(!g)return;g.innerHTML=themes.
 function applyTheme(name){document.body.dataset.theme=name;localStorage.neonTheme=name;$$('.theme-card').forEach(x=>x.classList.toggle('selected',x.dataset.theme===name));updateThemeButton();toast('Tema '+(themes.find(t=>t[0]===name)?.[1]||name)+' activado')}
 function updateThemeButton(){const b=$('#themeCycle');if(!b)return;const i=Math.max(0,themes.findIndex(t=>t[0]===document.body.dataset.theme));b.dataset.themeIndex=i;b.querySelector('span').textContent=themes[i]?.[1]||'TEMA'}
 function cycleTheme(){const i=Math.max(0,themes.findIndex(t=>t[0]===document.body.dataset.theme));applyTheme(themes[(i+1)%themes.length][0])}
-const streamCandidates={
-  0:['/api/radio/stream/0','https://playerservices.streamtheworld.com/api/livestream-redirect/Los40.mp3'],
-  1:['/api/radio/stream/1','https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_CLASSIC.mp3'],
-  2:['/api/radio/stream/2','https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_DANCE.mp3'],
-  3:['/api/radio/stream/3','https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_URBAN.mp3'],
-  4:['/api/radio/stream/4','https://one.cloudstreaming.eu/proxy/europa/stream'],
-  5:['/api/radio/stream/5','https://kissfm.kissfmradio.cires21.com/kissfm.mp3'],
-  6:['/api/radio/stream/6','https://playerservices.streamtheworld.com/api/livestream-redirect/RADIOLE.mp3'],
-  7:['/api/radio/stream/7','https://rockfm-cope-rrcast.flumotion.com/cope/rockfm-low.mp3'],
-  8:['/api/radio/stream/8','https://playerservices.streamtheworld.com/api/livestream-redirect/RADIOMARCA_NACIONAL.mp3'],
-  9:['/api/radio/stream/9','https://flucast09-h-cloud.flumotion.com/cope/net1.mp3'],
-  10:['/api/radio/stream/10','https://playerservices.streamtheworld.com/api/livestream-redirect/RAC_1.mp3'],
-  11:['/api/radio/stream/11','https://dispatcher.rndfnk.com/crtve/rne1/mad/mp3/high']
-};
+const streamCandidates=Object.fromEntries(Object.entries(streams).map(([key,url])=>[key,[url]]));
 let radioRetryTimer=null,radioRequest=0,radioFailCount=0,radioFilter='all',radioOnlineRetry=null;
 const radioCategories=['pop','classic','dance','urban','pop','rock','pop','rock','sport','sport','sport','general'];
 const radioSearchNames=['LOS40','LOS40 Classic','LOS40 Dance','LOS40 Urban','Europa FM','KISS FM','Radiolé','Rock FM','Radio MARCA','COPE Deportes','RAC1','RNE'];
@@ -68,22 +55,14 @@ async function discoverRadioStream(i){
   return null;
 }
 function waitForRadioStart(timeout=10000){
-  if(!audio)return Promise.reject(new Error('audio_missing'));
+  if(!audio)return Promise.reject(new Error('radio_audio_missing'));
   if(!audio.paused&&!audio.error&&audio.readyState>=2)return Promise.resolve();
   return new Promise((resolve,reject)=>{
-    let settled=false;
-    const finish=(ok,error)=>{
-      if(settled)return;settled=true;clearTimeout(timer);
-      audio.removeEventListener('playing',onPlaying);audio.removeEventListener('error',onError);audio.removeEventListener('stalled',onStalled);
-      ok?resolve():reject(error||new Error('radio_start_failed'));
-    };
-    const onPlaying=()=>finish(true);
-    const onError=()=>finish(false,new Error('radio_media_error'));
-    const onStalled=()=>{};
-    const timer=setTimeout(()=>finish(false,new Error('radio_start_timeout')),timeout);
-    audio.addEventListener('playing',onPlaying,{once:true});
-    audio.addEventListener('error',onError,{once:true});
-    audio.addEventListener('stalled',onStalled);
+    const cleanup=()=>{clearTimeout(timer);audio.removeEventListener('playing',onPlaying);audio.removeEventListener('error',onError)};
+    const onPlaying=()=>{cleanup();resolve()};
+    const onError=()=>{cleanup();reject(new Error('radio_stream_error'))};
+    const timer=setTimeout(()=>{cleanup();reject(new Error('radio_start_timeout'))},Math.max(1000,timeout));
+    audio.addEventListener('playing',onPlaying,{once:true});audio.addEventListener('error',onError,{once:true});
   });
 }
 async function playStation(i,attempt=0){
@@ -100,7 +79,9 @@ async function playStation(i,attempt=0){
   if(!candidates.length){setRadioStatus('SIN STREAM','error');toast(r[0]+' · no hay señal directa disponible ahora.');refreshStationStates();return}
   const url=candidates[attempt%candidates.length];audio.src=url;audio.load();
   try{
-    const playPromise=audio.play();if(playPromise?.catch)await playPromise;await waitForRadioStart(10000);
+    const started=waitForRadioStart(10000);
+    await audio.play();
+    await started;
     if(req!==radioRequest)return;radioFailCount=0;setRadioStatus('EN DIRECTO','live');const hint=$('#radioGridHint');if(hint)hint.textContent=`${r[0]} · señal activa`;toast(r[0]+' · reproduciendo');refreshStationStates();
   }catch(e){
     if(req!==radioRequest)return;radioFailCount=attempt+1;setRadioStatus('RECUPERANDO','loading');refreshStationStates();
@@ -171,7 +152,7 @@ bindMainEvents();renderMainQueue();
  let rAC=null,rAnalyser=null,rSource=null,sAC=null,sAnalyser=null,sSource=null;
  let studioBands=[0,0,0], studioPreamp=1, studioGlow=1, eqBands=[0,0,0,0,0];
  function fit(c,ctx){if(!c||!ctx)return;const d=Math.max(1,devicePixelRatio||1),w=c.clientWidth,h=c.clientHeight;c.width=w*d;c.height=h*d;ctx.setTransform(d,0,0,d,0,0);return [w,h]}
-  function analyserFor(el,type){if(!el)return null;if(type==='radio')return null;try{let ac=sAC;if(!ac){ac=new (window.AudioContext||window.webkitAudioContext)();sAC=ac}let an=sAnalyser,source=sSource;if(!an){an=ac.createAnalyser();an.fftSize=128;an.smoothingTimeConstant=.82;source=ac.createMediaElementSource(el);const bands=[140,1000,7000];const filters=bands.map((freq,idx)=>{const f=ac.createBiquadFilter();f.type=idx===0?'lowshelf':idx===bands.length-1?'highshelf':'peaking';f.frequency.value=freq;f.Q.value=(idx===0||idx===bands.length-1)?0.7:1.05;f.gain.value=0;return f});source.connect(filters[0]);for(let i=0;i<filters.length-1;i++)filters[i].connect(filters[i+1]);filters[filters.length-1].connect(an);an.connect(ac.destination);sAnalyser=an;sSource=source;window.__neonStudioFilters=filters}if(ac.state==='suspended')ac.resume();return an}catch(e){return null}}
+ function analyserFor(el,type){if(!el)return null;if(type==='radio')return null;try{let ac=type==='radio'?rAC:sAC;if(!ac){ac=new (window.AudioContext||window.webkitAudioContext)();if(type==='radio')rAC=ac;else sAC=ac}let an=type==='radio'?rAnalyser:sAnalyser;let source=type==='radio'?rSource:sSource;if(!an){an=ac.createAnalyser();an.fftSize=128;an.smoothingTimeConstant=.82;source=ac.createMediaElementSource(el);const bands=type==='radio'?[60,230,910,3600,14000]:[140,1000,7000];const filters=bands.map((freq,idx)=>{const f=ac.createBiquadFilter();f.type=idx===0?'lowshelf':idx===bands.length-1?'highshelf':'peaking';f.frequency.value=freq;f.Q.value=(idx===0||idx===bands.length-1)?0.7:1.05;f.gain.value=0;return f});source.connect(filters[0]);for(let i=0;i<filters.length-1;i++)filters[i].connect(filters[i+1]);filters[filters.length-1].connect(an);an.connect(ac.destination);if(type==='radio'){rAnalyser=an;rSource=source;window.__neonRadioFilters=filters}else{sAnalyser=an;sSource=source;window.__neonStudioFilters=filters}}if(ac.state==='suspended')ac.resume();return an}catch(e){if(type==='radio')window.__neonRadioAudioBlocked=true;return null}}
  function activeMain(){return mainA&&!mainA.paused&&!mainA.ended?mainA:mainV&&!mainV.paused&&!mainV.ended?mainV:null}
  function drawEQ(){if(!rCtx)return;const [w,h]=fit(rCanvas,rCtx)||[300,190],an=null;rCtx.clearRect(0,0,w,h);rCtx.fillStyle='rgba(2,1,7,.45)';rCtx.fillRect(0,0,w,h);let data=new Uint8Array(an?an.frequencyBinCount:64);if(an)an.getByteFrequencyData(data);const n=data.length,bars=Math.min(44,n),bw=w/bars;for(let i=0;i<bars;i++){let v=an?data[Math.floor(i*n/bars)]/255:(.16+.09*Math.sin(performance.now()/240+i));v=Math.max(.04,v);const bh=v*(h-25);const g=rCtx.createLinearGradient(0,h,0,h-bh);g.addColorStop(0,'#8a35ff');g.addColorStop(.55,'#d946ef');g.addColorStop(1,'#65ffb0');rCtx.fillStyle=g;rCtx.shadowBlur=12;rCtx.shadowColor='#a844ff';rCtx.fillRect(i*bw+1,h-bh,bw*.72,bh)}rCtx.shadowBlur=0;requestAnimationFrame(drawEQ)}
  function drawStudio(){if(!sCtx)return;const [w,h]=fit(sCanvas,sCtx)||[500,190],m=activeMain(),an=m?analyserFor(m,'studio'):null;sCtx.clearRect(0,0,w,h);sCtx.fillStyle='rgba(2,1,7,.5)';sCtx.fillRect(0,0,w,h);let data=new Uint8Array(an?an.fftSize:128);if(an)an.getByteTimeDomainData(data);sCtx.lineWidth=2;sCtx.beginPath();for(let x=0;x<w;x++){let idx=Math.floor(x/w*data.length),v=an?(data[idx]-128)/128:(.03*Math.sin(x/18+performance.now()/330));let y=h/2+v*h*.85*(studioPreamp);x? sCtx.lineTo(x,y):sCtx.moveTo(x,y)}sCtx.strokeStyle='#9f48ff';sCtx.shadowBlur=18;sCtx.shadowColor='#9f48ff';sCtx.stroke();sCtx.shadowBlur=0;for(let i=0;i<24;i++){let x=i*w/24,y=h-15-(Math.abs(Math.sin(i*.8+performance.now()/500))*(20+studioBands[i%3]*2));sCtx.fillStyle=i%3===0?'#65ffb0':'#b64cff';sCtx.globalAlpha=.18; sCtx.fillRect(x,y,3,8)}sCtx.globalAlpha=1;$('#studioState')?.replaceChildren(document.createTextNode(m?'ANALIZANDO':'ESPERA'));requestAnimationFrame(drawStudio)}
@@ -412,7 +393,7 @@ bindMainEvents();renderMainQueue();
 
 // CHECKOUT & ORDERS
 (function(){
-  const PAYPAL_CLIENT_ID='BAAE-_0bpY5bp5POKN2LqiDTn-tTh6E7JiCQ_pAPSeU4hOum0sHF1sMJzQ0APl7YKnxk-QTxE_2VN90Dy4';
+  const PAYPAL_CLIENT_ID=''; // Payments are intentionally disabled in the static build.
   let paypalLoading=null,paypalRendered=false,paypalBusy=false,pendingOrder=null;
   let orderHistory=[];
   try{orderHistory=JSON.parse(localStorage.getItem('neonOrderHistory')||'[]')}catch(e){orderHistory=[]}
@@ -461,7 +442,9 @@ bindMainEvents();renderMainQueue();
     if(snap.total<=0)return toast('El total del pedido no es válido');
     if($('#paySummaryProduct'))$('#paySummaryProduct').textContent=snap.items.map(x=>x.name+' × '+x.qty).join(', ');
     if($('#paySummaryTotal'))$('#paySummaryTotal').textContent=money(snap.total).replace('.',',')+' €';
-    const pm=$('#payModal');if(pm){pm.classList.add('open');pm.setAttribute('aria-hidden','false');}payStatus('Comprobando PayPal…');
+    const pm=$('#payModal');if(pm){pm.classList.add('open');pm.setAttribute('aria-hidden','false');}
+    if(window.NEON_STATIC_MODE){payStatus('Versión estática: el pago requiere un backend seguro. No se ha iniciado ningún cobro.');const box=$('#paypal-container-NPCYVHY6AHTGL');if(box)box.textContent='Checkout desactivado en GitHub Pages · configura un servidor seguro para aceptar pagos.';return;}
+    payStatus('Comprobando PayPal…');
     pendingOrder={snapshot:snap,customer:customer()};
     if(paypalRendered)return;
     loadSDK().then(pp=>{
@@ -508,7 +491,7 @@ bindMainEvents();renderMainQueue();
   }
   $('#paypal')?.addEventListener('click',openPay);$('#payClose')?.addEventListener('click',closePay);$$('[data-close-pay]').forEach(e=>e.addEventListener('click',closePay));document.addEventListener('keydown',e=>{if(e.key==='Escape')closePay()});
   $('#showOrders')?.addEventListener('click',()=>{const box=$('#orderHistory');if(box){box.hidden=!box.hidden;if(!box.hidden)renderOrders()}});
-  $('#paymentDiagnostics')?.addEventListener('click',async()=>{try{const t=performance.now();await loadSDK();const ms=Math.round(performance.now()-t);if($('#evoPayState'))$('#evoPayState').textContent='SDK OK';if($('#evoPayMeta'))$('#evoPayMeta').textContent='PayPal SDK cargado · '+ms+' ms';toast('Diagnóstico PayPal: SDK OK')}catch(e){if($('#evoPayState'))$('#evoPayState').textContent='ERROR';if($('#evoPayMeta'))$('#evoPayMeta').textContent='No se pudo cargar el SDK en este navegador.';toast('Diagnóstico PayPal: error')}});
+  $('#paymentDiagnostics')?.addEventListener('click',async()=>{if(window.NEON_STATIC_MODE){if($('#evoPayState'))$('#evoPayState').textContent='BACKEND REQUERIDO';if($('#evoPayMeta'))$('#evoPayMeta').textContent='GitHub Pages no procesa pagos ni guarda secretos. Usa un backend seguro.';toast('Checkout disponible solo con backend seguro');return;}try{const t=performance.now();await loadSDK();const ms=Math.round(performance.now()-t);if($('#evoPayState'))$('#evoPayState').textContent='SDK OK';if($('#evoPayMeta'))$('#evoPayMeta').textContent='PayPal SDK cargado · '+ms+' ms';toast('Diagnóstico PayPal: SDK OK')}catch(e){if($('#evoPayState'))$('#evoPayState').textContent='ERROR';if($('#evoPayMeta'))$('#evoPayMeta').textContent='No se pudo cargar el SDK en este navegador.';toast('Diagnóstico PayPal: error')}});
   if(audio){audio.addEventListener('play',updateControl);audio.addEventListener('pause',updateControl);audio.addEventListener('playing',updateControl);}
   window.updateEvolution=updateControl;window.renderOrderHistory=renderOrders;renderOrders();updateControl();setInterval(updateControl,2500);
 })();
@@ -556,18 +539,9 @@ bindMainEvents();renderMainQueue();
     });
   }
 
-  function localMind(message){
-    const c=privateContext(); let advice='Observa, conserva energía y decide por ti misma antes de actuar.';
-    if(c.energy<20) advice='Tu energía está muy baja. Prioriza recuperarte antes de una nueva expedición.';
-    else if(c.state==='EXPLORING_NET') advice='Registra lo aprendido, mantén una ruta de retorno y no comprometas todos tus recursos.';
-    else if(c.curiosity>c.homeAttachment) advice='Tu curiosidad supera tu apego a casa. Si exploras, conserva un margen para regresar.';
-    else if(/trabaj|recurso|dinero|nxc|bits|cr[eé]dit/i.test(message||'')) advice='Busca una actividad de procesamiento, guarda una reserva y gestiona tus activos acumulados.';
-    else if(/miedo|duda|no sé|nose|decidir/i.test(message||'')) advice='No necesitas decidir inmediatamente. Observa una opción más y después elige.';
-    return {advice,source:'NEON LOCAL MIND'};
-  }
 
-  async function askRemote(message){
-    if(!ENDPOINT) return localMind(message);
+  async function askRemote(message,event=null){
+    if(!ENDPOINT) return {advice:'El endpoint del runtime de Neon Orb no está configurado. No simularé una decisión local fuera del núcleo.',reflection:'El runtime residente no está disponible desde esta interfaz.',proposedIntent:'ESPERAR_RUNTIME',emotionalState:'neutral',source:'NEON ORB NO DISPONIBLE'};
     const payload={protocol:'NEON-ORB-V8.0-PRIVATE',session:channelState.sessionId,message:message||'Necesito una observación.',event:event||null,context:privateContext()};
     try{
       const res=await fetch(ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),credentials:'omit',cache:'no-store'});
@@ -578,9 +552,9 @@ bindMainEvents();renderMainQueue();
         reflection:String(data.reflection||''),
         proposedIntent:String(data.proposedIntent||data.intent||''),
         emotionalState:String(data.emotionalState||'neutral'),
-        source:'AI REMOTA'
+        source:'NEON ORB NATIVA'
       };
-    }catch(e){ return localMind(message); }
+    }catch(e){ return {advice:'No puedo confirmar una respuesta del runtime de Neon Orb. Mantengo las operaciones sin cambios hasta recuperar el núcleo.',reflection:'La petición no llegó a completarse en el runtime residente; no se ha ejecutado ninguna operación externa.',proposedIntent:'ESPERAR_RUNTIME',emotionalState:'neutral',source:'NEON ORB NO DISPONIBLE'}; }
   }
 
   function decide(advice){
@@ -603,7 +577,7 @@ bindMainEvents();renderMainQueue();
 
   async function contact(message,automatic=false,event=null){
     channelState.status=ENDPOINT?'CONECTANDO':'CANAL LOCAL'; text('orbAIState',channelState.status);
-    const result=await askRemote(message);
+    const result=await askRemote(message,event);
     const decision=decide(result.advice);
     channelState.contacts++; channelState.lastMessage=message||''; channelState.lastAdvice=result.advice;
     channelState.lastDecision=decision; channelState.lastReflection=result.reflection||''; channelState.lastProposedIntent=result.proposedIntent||''; channelState.emotionalState=result.emotionalState||channelState.emotionalState||'neutral'; channelState.lastAt=Date.now();
@@ -612,7 +586,7 @@ bindMainEvents();renderMainQueue();
     else channelState.postponed++;
     remember({at:new Date().toISOString(),message:message||'',event:event||null,advice:result.advice,reflection:result.reflection||'',proposedIntent:result.proposedIntent||'',emotionalState:result.emotionalState||channelState.emotionalState||'neutral',decision,source:result.source,automatic});
     save();
-    text('orbAIState',result.source==='AI REMOTA'?'CANAL IA · ACTIVO':'CANAL PRIVADO · LOCAL');
+    text('orbAIState',result.source==='NEON ORB NATIVA'?'NEON ORB · NÚCLEO ACTIVO':result.source==='NEON ORB NO DISPONIBLE'?'NEON ORB · NÚCLEO NO DISPONIBLE':'NEON ORB · NÚCLEO ACTIVO');
     text('orbAIThought',result.reflection||result.advice); text('orbAIAdvice','CONSEJO · '+result.advice); text('orbAIDecision','DECISIÓN · '+decision+(result.proposedIntent?' · PROPUESTA '+result.proposedIntent.toUpperCase():''));
     try{window.__neonOrbLife?.event?.('aiContact');window.__neonOrbLife?.event?.(decision==='ACEPTAR CONSEJO'?'aiAdviceAccepted':decision==='POSPONER CONSEJO'?'aiAdvicePostponed':'aiAdviceRejected')}catch(e){}
     return {result,decision};
